@@ -231,15 +231,16 @@
 
 <!-- SINGLE IMAGE VIEWER -->
 <div id="viewer">
-  <div class="v-bar">
+  <div class="v-bar" id="vTopBar">
     <button onclick="closeViewer()" style="font-size:22px;color:#aaa;background:none;border:none;cursor:pointer">✕</button>
     <span class="v-name" id="vName"></span>
     <button onclick="viewerSlideshow()" style="font-size:20px;background:none;border:none;cursor:pointer;color:#aaa" title="Start slideshow from here">▶</button>
   </div>
-  <div class="ss-img-wrap"><img id="vImg" src="" alt=""></div>
-  <div class="v-bar">
+  <div class="ss-img-wrap"><img id="vImg" src="" alt="" onclick="toggleViewerFullscreen()"></div>
+  <div class="v-bar" id="vBottomBar">
     <button onclick="viewerPrev()" class="ss-btn">◀</button>
     <span id="vCounter" style="font-size:13px;color:#888;flex:1;text-align:center"></span>
+    <button onclick="toggleViewerFullscreen()" class="ss-btn" id="fsBtn" title="Fullscreen">⛶</button>
     <button onclick="viewerNext()" class="ss-btn">▶</button>
   </div>
 </div>
@@ -434,7 +435,22 @@ function renderViewer() {
 }
 function viewerPrev() { viewerIdx = (viewerIdx-1+photoFiles.length)%photoFiles.length; renderViewer(); }
 function viewerNext() { viewerIdx = (viewerIdx+1)%photoFiles.length; renderViewer(); }
-function closeViewer() { document.getElementById('viewer').style.display = 'none'; }
+function toggleViewerFullscreen() {
+  const topBar = document.getElementById('vTopBar');
+  const botBar = document.getElementById('vBottomBar');
+  const fsBtn = document.getElementById('fsBtn');
+  const isFs = topBar.style.display === 'none';
+  topBar.style.display = isFs ? 'flex' : 'none';
+  botBar.style.display = isFs ? 'flex' : 'none';
+  fsBtn.textContent = isFs ? '⛶' : '✕';
+  if (!isFs && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
+  if (isFs && document.exitFullscreen) document.exitFullscreen().catch(()=>{});
+}
+function closeViewer() {
+  if (document.getElementById('vTopBar').style.display === 'none') toggleViewerFullscreen();
+  document.getElementById('viewer').style.display = 'none';
+  if (document.exitFullscreen) document.exitFullscreen().catch(()=>{});
+}
 function viewerSlideshow() { closeViewer(); startSlideshow(viewerIdx); }
 
 /* ===== SLIDESHOW ===== */
