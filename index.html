@@ -678,7 +678,8 @@ function stopMetronome() {
   if (bar) bar.querySelectorAll('.metro-circle').forEach(c => c.remove());
 }
 
-// Auto window.addEventListener('load', () => {
+// Auto-restore saved credentials
+window.addEventListener('load', () => {
   const k = localStorage.getItem('ds_apiKey'), c = localStorage.getItem('ds_clientId');
   if (k) document.getElementById('apiKey').value = k;
   if (c) document.getElementById('clientId').value = c;
