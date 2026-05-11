@@ -413,15 +413,28 @@ function openViewer(idx) {
   document.getElementById('viewer').style.display = 'flex';
   renderViewer();
 }
-function getImageSrc(f) {
-  if (demoMode) return f.webContentLink;
-  return `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media&access_token=${accessToken}`;
+async function loadImageIntoEl(el, f) {
+  if (demoMode) { el.src = f.webContentLink; return; }
+  const url = `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`;
+  console.log('Loading image:', f.name, '| id:', f.id, '| token:', accessToken ? accessToken.substring(0,20)+'...' : 'NULL');
+  alert('Loading: ' + f.name + '\nID: ' + f.id + '\nToken: ' + (accessToken ? 'present' : 'MISSING'));
+  try {
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    console.log('Response status:', resp.status);
+    if (!resp.ok) { alert('Fetch failed: ' + resp.status + ' ' + resp.statusText); return; }
+    const blob = await resp.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    el.src = blobUrl;
+  } catch(e) {
+    console.error('Image load error:', e);
+    alert('Error: ' + e.message);
+  }
 }
 function renderViewer() {
   const f = photoFiles[viewerIdx];
-  document.getElementById('vImg').src = getImageSrc(f);
   document.getElementById('vName').textContent = f.name;
   document.getElementById('vCounter').textContent = `${viewerIdx+1} / ${photoFiles.length}`;
+  loadImageIntoEl(document.getElementById('vImg'), f);
 }
 function viewerPrev() { viewerIdx = (viewerIdx-1+photoFiles.length)%photoFiles.length; renderViewer(); }
 function viewerNext() { viewerIdx = (viewerIdx+1)%photoFiles.length; renderViewer(); }
@@ -449,11 +462,10 @@ function loadSSPhoto() {
   if (ssTransition === 'fade') {
     img.classList.add('fade');
     setTimeout(() => {
-      img.src = getImageSrc(f);
-      img.onload = () => img.classList.remove('fade');
+      loadImageIntoEl(img, f).then(() => img.classList.remove('fade'));
     }, 250);
   } else {
-    img.src = getImageSrc(f);
+    loadImageIntoEl(img, f);
   }
   animateBar();
 }
@@ -539,7 +551,5 @@ window.addEventListener('load', () => {
   if (c) document.getElementById('clientId').value = c;
 });
 </script>
- <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-<script>eruda.init();</script>
 </body>
 </html>
