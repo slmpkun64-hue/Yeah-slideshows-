@@ -235,7 +235,10 @@
       <span>Loop</span>
       <div class="toggle on" id="loopToggle" onclick="toggleLoop()"></div>
     </div>
-  </div>
+    <div class="ss-setting-row" style="margin-top:14px;border-top:1px solid #333;padding-top:12px">
+      <span style="font-size:12px;color:#888">Seen: <span id="seenCount">0</span> / <span id="totalCount">0</span></span>
+      <button onclick="resetSeenPhotos()" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer">↺ Reset</button>
+    </div>
 </div>
 
 <!-- METRONOME BAR (shared between viewer and slideshow) -->
@@ -266,6 +269,8 @@ let folderStack = [{id:'root',name:'My Drive'}];
 let allFiles = [], photoFiles = [], folderFiles = [];
 let ssIndex = 0, ssTimer = null, ssInterval = 5000, ssShuffle = false, ssLoop = true, ssPaused = false;
 let ssOrder = [], ssTransition = 'fade';
+let ssLastIndex = null;        // remembers position when leaving slideshow
+let seenPhotos = new Set();    // tracks which photo indices have been shown
 let viewerIdx = 0;
 let demoMode = false;
 
@@ -500,24 +505,73 @@ function closeViewer() {
 function viewerSlideshow() { closeViewer(); startSlideshow(viewerIdx); }
 
 /* ===== SLIDESHOW ===== */
-function startSlideshow(startIdx=0) {
+function buildSSOrder(startIdx=0) {
+  // Build order of unseen photos only
+  let unseen = photoFiles.map((_,i)=>i).filter(i => !seenPhotos.has(i));
+  if (unseen.length === 0) return null; // all seen
+  if (ssShuffle) shuffle(unseen);
+  else {
+    // Start from startIdx, wrap around, skip seen
+    const sorted = [];
+    for (let offset = 0; offset < photoFiles.length; offset++) {
+      const i = (startIdx + offset) % photoFiles.length;
+      if (!seenPhotos.has(i)) sorted.push(i);
+    }
+    return sorted;
+  }
+  return unseen;
+}
+
+function startSlideshow(startIdx=null) {
   if (!photoFiles.length) return;
-  ssOrder = photoFiles.map((_,i)=>i);
-  if (ssShuffle) shuffle(ssOrder);
-  ssIndex = ssShuffle ? 0 : startIdx;
+  // Resume from last position if no explicit start given
+  const resumeFrom = startIdx !== null ? startIdx : (ssLastIndex !== null ? ssLastIndex : 0);
+  const order = buildSSOrder(resumeFrom);
+  if (order === null) {
+    // All photos seen — prompt reset
+    showAllSeenPrompt();
+    return;
+  }
+  ssOrder = order;
+  ssIndex = 0;
   ssPaused = false;
   document.getElementById('slideshow').style.display = 'flex';
   document.getElementById('pauseBtn').textContent = '⏸';
+  updateSeenCounter();
   loadSSPhoto();
   scheduleSS();
   startMetronome();
 }
+
+function showAllSeenPrompt() {
+  document.getElementById('slideshow').style.display = 'flex';
+  document.getElementById('ssFileName').textContent = '🎉 All photos shown!';
+  document.getElementById('ssCounter').textContent = 'Open ⚙ settings to reset';
+  document.getElementById('seenCount').textContent = seenPhotos.size;
+  document.getElementById('totalCount').textContent = photoFiles.length;
+}
+
+function updateSeenCounter() {
+  const remaining = photoFiles.length - seenPhotos.size;
+  document.getElementById('ssCounter').textContent = `${ssIndex+1} / ${ssOrder.length}  (${remaining} unseen)`;
+  document.getElementById('seenCount').textContent = seenPhotos.size;
+  document.getElementById('totalCount').textContent = photoFiles.length;
+}
+
+function resetSeenPhotos() {
+  seenPhotos.clear();
+  ssLastIndex = null;
+  toggleSettings();
+  startSlideshow(0);
+}
 function loadSSPhoto() {
   const idx = ssOrder[ssIndex];
   const f = photoFiles[idx];
+  seenPhotos.add(idx);
+  ssLastIndex = idx;
   const img = document.getElementById('ssImg');
   document.getElementById('ssFileName').textContent = f.name;
-  document.getElementById('ssCounter').textContent = `${ssIndex+1} / ${photoFiles.length}`;
+  updateSeenCounter();
   if (ssTransition === 'fade') {
     img.classList.add('fade');
     setTimeout(() => {
@@ -541,6 +595,10 @@ function ssNext() {
   ssIndex++;
   if (ssIndex >= ssOrder.length) {
     if (!ssLoop) { closeSlideshow(); return; }
+    // Rebuild unseen order for next loop
+    const order = buildSSOrder(ssLastIndex !== null ? (ssLastIndex + 1) % photoFiles.length : 0);
+    if (order === null) { showAllSeenPrompt(); return; }
+    ssOrder = order;
     ssIndex = 0;
     if (ssShuffle) shuffle(ssOrder);
   }
