@@ -416,18 +416,14 @@ function openViewer(idx) {
 async function loadImageIntoEl(el, f) {
   if (demoMode) { el.src = f.webContentLink; return; }
   const url = `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`;
-  console.log('Loading image:', f.name, '| id:', f.id, '| token:', accessToken ? accessToken.substring(0,20)+'...' : 'NULL');
-  alert('Loading: ' + f.name + '\nID: ' + f.id + '\nToken: ' + (accessToken ? 'present' : 'MISSING'));
   try {
     const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-    console.log('Response status:', resp.status);
-    if (!resp.ok) { alert('Fetch failed: ' + resp.status + ' ' + resp.statusText); return; }
+    if (!resp.ok) return;
     const blob = await resp.blob();
     const blobUrl = URL.createObjectURL(blob);
     el.src = blobUrl;
   } catch(e) {
     console.error('Image load error:', e);
-    alert('Error: ' + e.message);
   }
 }
 function renderViewer() {
