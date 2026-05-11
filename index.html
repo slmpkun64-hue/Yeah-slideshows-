@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>DriveSlide</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0e0e0e;--bg2:#1a1a1a;--bg3:#252525;
+    --text:#f0f0f0;--text2:#aaa;--text3:#666;
+    --accent:#4f8ef7;--accent2:#2d5fc4;
+    --border:#2e2e2e;--radius:12px;--radius-sm:8px;
+  }
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+  button{cursor:pointer;border:none;background:none;color:inherit;font-family:inherit}
+
+  /* SETUP SCREEN */
+  #setup{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:24px;text-align:center}
+  .logo{font-size:40px;margin-bottom:8px}
+  .app-name{font-size:26px;font-weight:700;margin-bottom:4px}
+  .app-sub{font-size:14px;color:var(--text2);margin-bottom:32px}
+  .setup-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:24px;width:100%;max-width:420px;text-align:left}
+  .setup-card h2{font-size:16px;font-weight:600;margin-bottom:16px}
+  .step{display:flex;gap:12px;margin-bottom:20px;align-items:flex-start}
+  .step-num{background:var(--accent);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;margin-top:2px}
+  .step-content p{font-size:13px;color:var(--text2);line-height:1.5}
+  .step-content a{color:var(--accent);text-decoration:none}
+  .step-content code{background:var(--bg3);padding:2px 6px;border-radius:4px;font-size:12px;color:#f0a;}
+  .field{margin-bottom:16px}
+  .field label{display:block;font-size:13px;color:var(--text2);margin-bottom:6px}
+  .field input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:10px 12px;font-size:14px;font-family:inherit;outline:none;transition:border .2s}
+  .field input:focus{border-color:var(--accent)}
+  .btn-primary{width:100%;background:var(--accent);color:#fff;border-radius:var(--radius-sm);padding:12px;font-size:15px;font-weight:600;transition:background .2s}
+  .btn-primary:hover{background:var(--accent2)}
+  .btn-primary:active{transform:scale(0.98)}
+  .demo-btn{width:100%;margin-top:10px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);border-radius:var(--radius-sm);padding:12px;font-size:14px;transition:background .2s}
+  .demo-btn:hover{background:var(--border)}
+  .err{color:#f66;font-size:13px;margin-top:8px;display:none}
+
+  /* MAIN APP */
+  #app{display:none;flex-direction:column;min-height:100vh}
+
+  /* TOPBAR */
+  .topbar{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+  .topbar .logo-sm{font-size:20px}
+  .topbar .title{font-size:16px;font-weight:600;flex:1}
+  .topbar .icon-btn{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--bg3);font-size:18px;transition:background .2s}
+  .topbar .icon-btn:hover{background:var(--border)}
+
+  /* BREADCRUMB */
+  .breadcrumb{display:flex;align-items:center;gap:6px;padding:10px 16px;font-size:13px;color:var(--text2);overflow-x:auto;background:var(--bg);border-bottom:1px solid var(--border);white-space:nowrap}
+  .breadcrumb span{color:var(--text3)}
+  .bc-item{cursor:pointer;color:var(--accent)}
+  .bc-item:hover{text-decoration:underline}
+
+  /* GRID */
+  #content{flex:1;padding:12px}
+  .loading{text-align:center;padding:40px;color:var(--text2);font-size:14px}
+  .spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .empty{text-align:center;padding:60px 20px;color:var(--text3);font-size:14px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px}
+  .grid-item{aspect-ratio:1;border-radius:var(--radius-sm);overflow:hidden;cursor:pointer;position:relative;background:var(--bg3)}
+  .grid-item img{width:100%;height:100%;object-fit:cover;transition:opacity .3s}
+  .grid-item:hover img{opacity:.85}
+  .folder-item{aspect-ratio:1;border-radius:var(--radius-sm);background:var(--bg2);border:1px solid var(--border);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;transition:background .2s}
+  .folder-item:hover{background:var(--bg3)}
+  .folder-icon{font-size:32px}
+  .folder-name{font-size:11px;color:var(--text2);text-align:center;padding:0 6px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .play-btn{position:fixed;bottom:20px;right:20px;width:56px;height:56px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;box-shadow:0 4px 20px rgba(0,0,0,.5);z-index:50;transition:transform .2s}
+  .play-btn:hover{transform:scale(1.08)}
+  .play-btn:active{transform:scale(0.95)}
+  .photo-count{font-size:12px;color:var(--text3);padding:8px 16px 4px}
+
+  /* SLIDESHOW */
+  #slideshow{display:none;position:fixed;inset:0;background:#000;z-index:200;flex-direction:column}
+  .ss-img-wrap{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+  .ss-img-wrap img{max-width:100%;max-height:100%;object-fit:contain;transition:opacity .5s}
+  .ss-img-wrap img.fade{opacity:0}
+  .ss-controls{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(0,0,0,.8);gap:8px}
+  .ss-btn{width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;font-size:20px;transition:background .2s;flex-shrink:0}
+  .ss-btn:hover{background:rgba(255,255,255,.22)}
+  .ss-info{flex:1;text-align:center}
+  .ss-info p{font-size:13px;color:#ccc}
+  .ss-info small{font-size:11px;color:#666}
+  .ss-progress{height:2px;background:#222;position:relative}
+  .ss-progress-bar{height:100%;background:var(--accent);transition:width linear}
+  .ss-top{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(0,0,0,.8)}
+  .ss-title{font-size:14px;font-weight:600}
+  .ss-counter{font-size:12px;color:#888}
+  .ss-settings{background:rgba(0,0,0,.9);border-radius:var(--radius);padding:16px;position:absolute;bottom:80px;right:16px;z-index:10;min-width:200px;border:1px solid #333}
+  .ss-settings h3{font-size:13px;color:var(--text2);margin-bottom:12px}
+  .ss-setting-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:13px;gap:12px}
+  .ss-setting-row input[type=range]{flex:1;accent-color:var(--accent)}
+  .ss-setting-row select{background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px}
+  .toggle{width:38px;height:20px;background:var(--border);border-radius:10px;position:relative;cursor:pointer;transition:background .2s;flex-shrink:0}
+  .toggle.on{background:var(--accent)}
+  .toggle::after{content:'';position:absolute;width:14px;height:14px;background:#fff;border-radius:50%;top:3px;left:3px;transition:left .2s}
+  .toggle.on::after{left:21px}
+
+  /* VIEWER */
+  #viewer{display:none;position:fixed;inset:0;background:#000;z-index:200;flex-direction:column}
+  #viewer .ss-img-wrap{flex:1}
+  #viewer .v-bar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(0,0,0,.8)}
+  #viewer .v-name{font-size:13px;color:#ccc;flex:1;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 8px}
+
+  /* METRONOME BAR */
+  #metronomeBar{position:fixed;bottom:0;left:0;right:0;height:52px;background:#0a0a0a;z-index:300;overflow:hidden;border-top:1px solid #1e1e1e;flex-shrink:0}
+  #metroMid{position:absolute;left:50%;top:0;width:2px;height:100%;background:#2a2a2a;transform:translateX(-50%);transition:background .08s,box-shadow .08s}
+  #metroMid.flash{background:var(--accent);box-shadow:0 0 12px var(--accent)}
+  .metro-circle{position:absolute;width:22px;height:22px;border-radius:50%;background:#333;border:2px solid #444;top:50%;transform:translate(-50%,-50%);transition:background .08s,box-shadow .08s,border-color .08s}
+  .metro-circle.lit{background:var(--accent);border-color:#fff;box-shadow:0 0 16px var(--accent),0 0 4px #fff}
+  #bpmDisplay{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:#444;font-family:monospace;pointer-events:none;transition:color .3s}
+  #bpmDisplay.changed{color:var(--accent)}
+
+  @media (prefers-color-scheme:light){
+    :root{--bg:#f5f5f5;--bg2:#fff;--bg3:#f0f0f0;--text:#111;--text2:#555;--text3:#999;--border:#e0e0e0}
+    #slideshow,#viewer{background:#111}
+  }
+</style>
+</head>
+<body>
+
+<!-- SETUP -->
+<div id="setup">
+  <div class="logo">🖼️</div>
+  <div class="app-name">DriveSlide</div>
+  <div class="app-sub">Google Drive photo gallery &amp; slideshow</div>
+
+  <div class="setup-card">
+    <h2>Connect your Google Drive</h2>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <p>Go to <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a>, create a project, enable the <strong>Google Drive API</strong> and <strong>Google Picker API</strong>.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <p>Create an <strong>OAuth 2.0 Client ID</strong> (Web application). Add this page's URL as an authorised JavaScript origin. Also create an <strong>API Key</strong> and restrict it to Drive &amp; Picker APIs.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <p>Paste your credentials below and click Connect.</p>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>API Key</label>
+      <input type="text" id="apiKey" placeholder="AIza..." autocomplete="off" spellcheck="false">
+    </div>
+    <div class="field">
+      <label>OAuth Client ID</label>
+      <input type="text" id="clientId" placeholder="12345-abc.apps.googleusercontent.com" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="err" id="setupErr">Please enter both API Key and Client ID.</div>
+    <button class="btn-primary" onclick="startAuth()">Connect to Google Drive</button>
+    <button class="demo-btn" onclick="loadDemo()">▶ Try demo mode (sample photos)</button>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app">
+  <div class="topbar">
+    <span class="logo-sm">🖼️</span>
+    <span class="title" id="topTitle">DriveSlide</span>
+    <button class="icon-btn" onclick="toggleSelect()" id="selectBtn" title="Select all for slideshow">☑</button>
+    <button class="icon-btn" onclick="showSettings()" title="Settings">⚙️</button>
+    <button class="icon-btn" onclick="signOut()" title="Sign out">↩</button>
+  </div>
+
+  <div class="breadcrumb" id="breadcrumb"></div>
+
+  <div id="content">
+    <div class="loading" id="loadingEl">
+      <div class="spinner"></div>
+      Loading your Drive...
+    </div>
+    <div class="empty" id="emptyEl" style="display:none">No photos or folders here.</div>
+    <div class="photo-count" id="photoCount"></div>
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <button class="play-btn" onclick="startSlideshow()" id="playBtn" style="display:none" title="Start slideshow">▶</button>
+</div>
+
+<!-- SLIDESHOW -->
+<div id="slideshow">
+  <div class="ss-top">
+    <span class="ss-title" id="ssTitle">Slideshow</span>
+    <span class="ss-counter" id="ssCounter"></span>
+    <button onclick="closeSlideshow()" style="font-size:22px;color:#aaa;background:none;border:none;cursor:pointer">✕</button>
+  </div>
+  <div class="ss-progress"><div class="ss-progress-bar" id="ssBar" style="width:0%"></div></div>
+  <div class="ss-img-wrap" id="ssWrap">
+    <img id="ssImg" src="" alt="">
+  </div>
+  <div class="ss-controls">
+    <button class="ss-btn" onclick="ssPrev()">◀</button>
+    <button class="ss-btn" onclick="ssToggleShuffle()" id="shuffleBtn" title="Shuffle">⇄</button>
+    <div class="ss-info">
+      <p id="ssFileName"></p>
+    </div>
+    <button class="ss-btn" onclick="toggleSettings()" title="Settings">⚙</button>
+    <button class="ss-btn" onclick="ssTogglePause()" id="pauseBtn">⏸</button>
+    <button class="ss-btn" onclick="ssNext()">▶</button>
+  </div>
+  <div class="ss-settings" id="ssSettings" style="display:none">
+    <h3>Slideshow settings</h3>
+    <div class="ss-setting-row">
+      <span>Interval</span>
+      <input type="range" min="2" max="20" value="5" id="intervalSlider" oninput="updateInterval(this.value)">
+      <span id="intervalVal" style="min-width:32px;font-size:12px;color:var(--text2)">5s</span>
+    </div>
+    <div class="ss-setting-row">
+      <span>Transition</span>
+      <select id="transitionSel" onchange="updateTransition(this.value)">
+        <option value="fade">Fade</option>
+        <option value="instant">Instant</option>
+      </select>
+    </div>
+    <div class="ss-setting-row">
+      <span>Shuffle</span>
+      <div class="toggle" id="shuffleToggle" onclick="ssToggleShuffle()"></div>
+    </div>
+    <div class="ss-setting-row">
+      <span>Loop</span>
+      <div class="toggle on" id="loopToggle" onclick="toggleLoop()"></div>
+    </div>
+  </div>
+</div>
+
+<!-- METRONOME BAR (shared between viewer and slideshow) -->
+<div id="metronomeBar" style="display:none">
+  <div id="metroMid"></div>
+  <span id="bpmDisplay"></span>
+</div>
+<div id="viewer">
+  <div class="v-bar" id="vTopBar">
+    <button onclick="closeViewer()" style="font-size:22px;color:#aaa;background:none;border:none;cursor:pointer">✕</button>
+    <span class="v-name" id="vName"></span>
+    <button onclick="viewerSlideshow()" style="font-size:20px;background:none;border:none;cursor:pointer;color:#aaa" title="Start slideshow from here">▶</button>
+  </div>
+  <div class="ss-img-wrap"><img id="vImg" src="" alt="" onclick="toggleViewerFullscreen()"></div>
+  <div class="v-bar" id="vBottomBar">
+    <button onclick="viewerPrev()" class="ss-btn">◀</button>
+    <span id="vCounter" style="font-size:13px;color:#888;flex:1;text-align:center"></span>
+    <button onclick="toggleViewerFullscreen()" class="ss-btn" id="fsBtn" title="Fullscreen">⛶</button>
+    <button onclick="viewerNext()" class="ss-btn">▶</button>
+  </div>
+</div>
+
+<script>
+const CLIENT_SCOPES = 'https://www.googleapis.com/auth/drive.readonly';
+const PHOTO_MIME = ['image/jpeg','image/png','image/gif','image/webp','image/heic'];
+let gapi_ready = false, tokenClient, accessToken = null;
+let folderStack = [{id:'root',name:'My Drive'}];
+let allFiles = [], photoFiles = [], folderFiles = [];
+let ssIndex = 0, ssTimer = null, ssInterval = 5000, ssShuffle = false, ssLoop = true, ssPaused = false;
+let ssOrder = [], ssTransition = 'fade';
+let viewerIdx = 0;
+let demoMode = false;
+
+const DEMO_PHOTOS = [
+  {id:'d1',name:'Sunset over the hills.jpg',thumbnailLink:'https://picsum.photos/seed/sunset/800/600',webContentLink:'https://picsum.photos/seed/sunset/1600/1200'},
+  {id:'d2',name:'Forest morning.jpg',thumbnailLink:'https://picsum.photos/seed/forest/800/600',webContentLink:'https://picsum.photos/seed/forest/1600/1200'},
+  {id:'d3',name:'Mountain lake.jpg',thumbnailLink:'https://picsum.photos/seed/lake/800/600',webContentLink:'https://picsum.photos/seed/lake/1600/1200'},
+  {id:'d4',name:'City lights.jpg',thumbnailLink:'https://picsum.photos/seed/city/800/600',webContentLink:'https://picsum.photos/seed/city/1600/1200'},
+  {id:'d5',name:'Beach waves.jpg',thumbnailLink:'https://picsum.photos/seed/beach/800/600',webContentLink:'https://picsum.photos/seed/beach/1600/1200'},
+  {id:'d6',name:'Autumn path.jpg',thumbnailLink:'https://picsum.photos/seed/autumn/800/600',webContentLink:'https://picsum.photos/seed/autumn/1600/1200'},
+  {id:'d7',name:'Snowy peaks.jpg',thumbnailLink:'https://picsum.photos/seed/snow/800/600',webContentLink:'https://picsum.photos/seed/snow/1600/1200'},
+  {id:'d8',name:'Desert dunes.jpg',thumbnailLink:'https://picsum.photos/seed/desert/800/600',webContentLink:'https://picsum.photos/seed/desert/1600/1200'},
+  {id:'d9',name:'Waterfall mist.jpg',thumbnailLink:'https://picsum.photos/seed/waterfall/800/600',webContentLink:'https://picsum.photos/seed/waterfall/1600/1200'},
+  {id:'d10',name:'Starry night sky.jpg',thumbnailLink:'https://picsum.photos/seed/stars/800/600',webContentLink:'https://picsum.photos/seed/stars/1600/1200'},
+  {id:'d11',name:'Lavender fields.jpg',thumbnailLink:'https://picsum.photos/seed/lavender/800/600',webContentLink:'https://picsum.photos/seed/lavender/1600/1200'},
+  {id:'d12',name:'Old town street.jpg',thumbnailLink:'https://picsum.photos/seed/oldtown/800/600',webContentLink:'https://picsum.photos/seed/oldtown/1600/1200'},
+];
+
+function loadGAPI() {
+  return new Promise(res => {
+    const s = document.createElement('script');
+    s.src = 'https://apis.google.com/js/api.js';
+    s.onload = () => gapi.load('client', () => { gapi_ready = true; res(); });
+    document.head.appendChild(s);
+  });
+}
+function loadGIS() {
+  return new Promise(res => {
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.onload = res;
+    document.head.appendChild(s);
+  });
+}
+
+async function startAuth() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const clientId = document.getElementById('clientId').value.trim();
+  const err = document.getElementById('setupErr');
+  if (!apiKey || !clientId) { err.style.display='block'; return; }
+  err.style.display='none';
+  localStorage.setItem('ds_apiKey', apiKey);
+  localStorage.setItem('ds_clientId', clientId);
+  await Promise.all([loadGAPI(), loadGIS()]);
+  await gapi.client.init({ apiKey, discoveryDocs:['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'] });
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: clientId, scope: CLIENT_SCOPES,
+    callback: (resp) => {
+      if (resp.error) {
+        document.getElementById('setupErr').textContent = 'Auth error: ' + resp.error;
+        document.getElementById('setupErr').style.display = 'block';
+        return;
+      }
+      accessToken = resp.access_token;
+      scheduleTokenRefresh(resp.expires_in || 3600);
+      if (document.getElementById('app').style.display === 'none') enterApp();
+    }
+  });
+  tokenClient.requestAccessToken({ prompt: 'select_account' });
+}
+
+let tokenRefreshTimer = null;
+function scheduleTokenRefresh(expiresIn) {
+  clearTimeout(tokenRefreshTimer);
+  // Refresh 5 minutes before expiry
+  const refreshIn = Math.max((expiresIn - 300) * 1000, 10000);
+  tokenRefreshTimer = setTimeout(() => {
+    if (tokenClient) tokenClient.requestAccessToken({ prompt: '' });
+  }, refreshIn);
+}
+
+function enterApp() {
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  loadFolder('root');
+}
+
+function loadDemo() {
+  demoMode = true;
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  renderFiles([], DEMO_PHOTOS);
+}
+
+function signOut() {
+  if (!demoMode && accessToken) google.accounts.oauth2.revoke(accessToken);
+  accessToken = null; demoMode = false;
+  clearTimeout(tokenRefreshTimer);
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('setup').style.display = 'flex';
+  folderStack = [{id:'root',name:'My Drive'}];
+}
+
+async function loadFolder(folderId) {
+  document.getElementById('loadingEl').style.display = 'block';
+  document.getElementById('emptyEl').style.display = 'none';
+  document.getElementById('grid').innerHTML = '';
+  document.getElementById('playBtn').style.display = 'none';
+  document.getElementById('photoCount').textContent = '';
+  updateBreadcrumb();
+  if (demoMode) { renderFiles([], DEMO_PHOTOS); return; }
+  try {
+    let folders = [], photos = [], pageToken = null;
+    do {
+      const params = {
+        q: `'${folderId}' in parents and trashed=false`,
+        fields: 'nextPageToken,files(id,name,mimeType,thumbnailLink,webContentLink)',
+        pageSize: 200, orderBy: 'name'
+      };
+      if (pageToken) params.pageToken = pageToken;
+      const res = await gapi.client.drive.files.list(params);
+      const data = res.result;
+      pageToken = data.nextPageToken;
+      for (const f of data.files) {
+        if (f.mimeType === 'application/vnd.google-apps.folder') folders.push(f);
+        else if (PHOTO_MIME.includes(f.mimeType)) photos.push(f);
+      }
+    } while (pageToken);
+    renderFiles(folders, photos);
+  } catch(e) {
+    document.getElementById('loadingEl').style.display = 'none';
+    document.getElementById('emptyEl').style.display = 'block';
+    document.getElementById('emptyEl').textContent = 'Error loading files. Check your credentials.';
+  }
+}
+
+function renderFiles(folders, photos) {
+  document.getElementById('loadingEl').style.display = 'none';
+  folderFiles = folders; photoFiles = photos;
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  if (!folders.length && !photos.length) {
+    document.getElementById('emptyEl').style.display = 'block'; return;
+  }
+  document.getElementById('emptyEl').style.display = 'none';
+  if (photos.length) {
+    document.getElementById('photoCount').textContent = `${photos.length} photo${photos.length!==1?'s':''}${folders.length ? `, ${folders.length} folder${folders.length!==1?'s':''}` : ''}`;
+    document.getElementById('playBtn').style.display = 'flex';
+  }
+  for (const f of folders) {
+    const d = document.createElement('div');
+    d.className = 'folder-item';
+    d.innerHTML = `<span class="folder-icon">📁</span><span class="folder-name">${esc(f.name)}</span>`;
+    d.onclick = () => { folderStack.push({id:f.id,name:f.name}); loadFolder(f.id); };
+    grid.appendChild(d);
+  }
+  photos.forEach((f, i) => {
+    const d = document.createElement('div');
+    d.className = 'grid-item';
+    const img = document.createElement('img');
+    img.loading = 'lazy';
+    img.alt = f.name;
+    img.src = demoMode ? f.thumbnailLink : (f.thumbnailLink ? f.thumbnailLink.replace('=s220','=s400') : '');
+    img.onerror = () => { img.src = ''; d.style.background = '#2a2a2a'; };
+    d.appendChild(img);
+    d.onclick = () => openViewer(i);
+    grid.appendChild(d);
+  });
+}
+
+function updateBreadcrumb() {
+  const bc = document.getElementById('breadcrumb');
+  bc.innerHTML = folderStack.map((f,i) => {
+    if (i === folderStack.length-1) return `<span style="color:var(--text)">${esc(f.name)}</span>`;
+    return `<span class="bc-item" onclick="goToFolder(${i})">${esc(f.name)}</span><span>›</span>`;
+  }).join('');
+}
+
+function goToFolder(idx) {
+  folderStack = folderStack.slice(0,idx+1);
+  loadFolder(folderStack[idx].id);
+}
+
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+/* ===== VIEWER ===== */
+function openViewer(idx) {
+  viewerIdx = idx;
+  document.getElementById('viewer').style.display = 'flex';
+  renderViewer();
+  startMetronome();
+}
+async function loadImageIntoEl(el, f, retry=true) {
+  if (demoMode) { el.src = f.webContentLink; return; }
+  const url = `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`;
+  try {
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (resp.status === 401 && retry && tokenClient) {
+      // Token expired — silently refresh then retry once
+      await new Promise(res => {
+        const orig = tokenClient._callback || tokenClient.callback;
+        tokenClient.requestAccessToken({ prompt: '' });
+        const check = setInterval(() => {
+          if (accessToken) { clearInterval(check); res(); }
+        }, 200);
+        setTimeout(() => { clearInterval(check); res(); }, 5000);
+      });
+      return loadImageIntoEl(el, f, false);
+    }
+    if (!resp.ok) return;
+    const blob = await resp.blob();
+    el.src = URL.createObjectURL(blob);
+  } catch(e) {
+    console.error('Image load error:', e);
+  }
+}
+function renderViewer() {
+  const f = photoFiles[viewerIdx];
+  document.getElementById('vName').textContent = f.name;
+  document.getElementById('vCounter').textContent = `${viewerIdx+1} / ${photoFiles.length}`;
+  loadImageIntoEl(document.getElementById('vImg'), f);
+}
+function viewerPrev() { viewerIdx = (viewerIdx-1+photoFiles.length)%photoFiles.length; renderViewer(); }
+function viewerNext() { viewerIdx = (viewerIdx+1)%photoFiles.length; renderViewer(); }
+function toggleViewerFullscreen() {
+  const topBar = document.getElementById('vTopBar');
+  const botBar = document.getElementById('vBottomBar');
+  const fsBtn = document.getElementById('fsBtn');
+  const isFs = topBar.style.display === 'none';
+  topBar.style.display = isFs ? 'flex' : 'none';
+  botBar.style.display = isFs ? 'flex' : 'none';
+  fsBtn.textContent = isFs ? '⛶' : '✕';
+  if (!isFs && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
+  if (isFs && document.exitFullscreen) document.exitFullscreen().catch(()=>{});
+}
+function closeViewer() {
+  if (document.getElementById('vTopBar').style.display === 'none') toggleViewerFullscreen();
+  document.getElementById('viewer').style.display = 'none';
+  if (document.exitFullscreen) document.exitFullscreen().catch(()=>{});
+  stopMetronome();
+}
+function viewerSlideshow() { closeViewer(); startSlideshow(viewerIdx); }
+
+/* ===== SLIDESHOW ===== */
+function startSlideshow(startIdx=0) {
+  if (!photoFiles.length) return;
+  ssOrder = photoFiles.map((_,i)=>i);
+  if (ssShuffle) shuffle(ssOrder);
+  ssIndex = ssShuffle ? 0 : startIdx;
+  ssPaused = false;
+  document.getElementById('slideshow').style.display = 'flex';
+  document.getElementById('pauseBtn').textContent = '⏸';
+  loadSSPhoto();
+  scheduleSS();
+  startMetronome();
+}
+function loadSSPhoto() {
+  const idx = ssOrder[ssIndex];
+  const f = photoFiles[idx];
+  const img = document.getElementById('ssImg');
+  document.getElementById('ssFileName').textContent = f.name;
+  document.getElementById('ssCounter').textContent = `${ssIndex+1} / ${photoFiles.length}`;
+  if (ssTransition === 'fade') {
+    img.classList.add('fade');
+    setTimeout(() => {
+      loadImageIntoEl(img, f).then(() => img.classList.remove('fade'));
+    }, 250);
+  } else {
+    loadImageIntoEl(img, f);
+  }
+  animateBar();
+}
+function animateBar() {
+  const bar = document.getElementById('ssBar');
+  bar.style.transition = 'none'; bar.style.width = '0%';
+  setTimeout(() => { bar.style.transition = `width ${ssInterval}ms linear`; bar.style.width = '100%'; }, 30);
+}
+function scheduleSS() {
+  clearTimeout(ssTimer);
+  if (!ssPaused) ssTimer = setTimeout(ssNext, ssInterval);
+}
+function ssNext() {
+  ssIndex++;
+  if (ssIndex >= ssOrder.length) {
+    if (!ssLoop) { closeSlideshow(); return; }
+    ssIndex = 0;
+    if (ssShuffle) shuffle(ssOrder);
+  }
+  loadSSPhoto(); scheduleSS();
+}
+function ssPrev() { ssIndex = (ssIndex-1+ssOrder.length)%ssOrder.length; loadSSPhoto(); scheduleSS(); }
+function ssTogglePause() {
+  ssPaused = !ssPaused;
+  document.getElementById('pauseBtn').textContent = ssPaused ? '▶' : '⏸';
+  if (!ssPaused) scheduleSS(); else clearTimeout(ssTimer);
+}
+function ssToggleShuffle() {
+  ssShuffle = !ssShuffle;
+  document.getElementById('shuffleBtn').style.color = ssShuffle ? 'var(--accent)' : '';
+  const t = document.getElementById('shuffleToggle');
+  t.classList.toggle('on', ssShuffle);
+  if (ssShuffle) shuffle(ssOrder);
+}
+function toggleLoop() {
+  ssLoop = !ssLoop;
+  document.getElementById('loopToggle').classList.toggle('on', ssLoop);
+}
+function closeSlideshow() { clearTimeout(ssTimer); document.getElementById('slideshow').style.display = 'none'; stopMetronome(); }
+function toggleSettings() {
+  const s = document.getElementById('ssSettings');
+  s.style.display = s.style.display === 'none' ? 'block' : 'none';
+}
+function updateInterval(v) { ssInterval = v*1000; document.getElementById('intervalVal').textContent = v+'s'; scheduleSS(); }
+function updateTransition(v) { ssTransition = v; }
+function shuffle(arr) { for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]];} }
+
+function toggleSelect() {}
+function showSettings() {}
+
+// Touch swipe for slideshow
+let tsX = 0;
+document.getElementById('slideshow').addEventListener('touchstart', e => tsX = e.touches[0].clientX);
+document.getElementById('slideshow').addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - tsX;
+  if (Math.abs(dx) > 50) { dx < 0 ? ssNext() : ssPrev(); }
+});
+document.getElementById('viewer').addEventListener('touchstart', e => tsX = e.touches[0].clientX);
+document.getElementById('viewer').addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - tsX;
+  if (Math.abs(dx) > 50) { dx < 0 ? viewerNext() : viewerPrev(); }
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (document.getElementById('slideshow').style.display !== 'none') {
+    if (e.key === 'ArrowRight') ssNext();
+    if (e.key === 'ArrowLeft') ssPrev();
+    if (e.key === ' ') { e.preventDefault(); ssTogglePause(); }
+    if (e.key === 'Escape') closeSlideshow();
+  }
+  if (document.getElementById('viewer').style.display !== 'none') {
+    if (e.key === 'ArrowRight') viewerNext();
+    if (e.key === 'ArrowLeft') viewerPrev();
+    if (e.key === 'Escape') closeViewer();
+  }
+});
+
+/* ===== METRONOME ===== */
+let metroBpm = 120, metroInterval = null, bpmTimer = null, audioCtx = null;
+
+function randomBpm() { return Math.floor(Math.random() * (300 - 60 + 1)) + 60; }
+
+function playBeep() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.type = 'sine'; osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
+    osc.start(audioCtx.currentTime); osc.stop(audioCtx.currentTime + 0.12);
+  } catch(e) {}
+}
+
+function spawnMetroCircle() {
+  const bar = document.getElementById('metronomeBar');
+  if (!bar) return;
+  const beatMs = 60000 / metroBpm;
+  const duration = beatMs * 2;
+  const barW = bar.offsetWidth;
+  const c = document.createElement('div');
+  c.className = 'metro-circle';
+  bar.appendChild(c);
+  let start = null, lit = false;
+  function step(ts) {
+    if (!start) start = ts;
+    const prog = (ts - start) / duration;
+    const x = prog * barW;
+    c.style.left = x + 'px';
+    if (!lit && x >= barW / 2) {
+      lit = true;
+      c.classList.add('lit');
+      playBeep();
+      const mid = document.getElementById('metroMid');
+      if (mid) { mid.classList.add('flash'); setTimeout(() => mid.classList.remove('flash'), 150); }
+      setTimeout(() => c.classList.remove('lit'), 200);
+    }
+    if (prog < 1) requestAnimationFrame(step);
+    else c.remove();
+  }
+  requestAnimationFrame(step);
+}
+
+function setMetroBpm(bpm) {
+  metroBpm = bpm;
+  clearInterval(metroInterval);
+  spawnMetroCircle();
+  metroInterval = setInterval(spawnMetroCircle, 60000 / metroBpm);
+  const el = document.getElementById('bpmDisplay');
+  if (el) {
+    el.textContent = metroBpm + ' BPM';
+    el.classList.add('changed');
+    setTimeout(() => el.classList.remove('changed'), 1000);
+  }
+}
+
+function startMetronome() {
+  stopMetronome();
+  document.getElementById('metronomeBar').style.display = 'block';
+  setMetroBpm(randomBpm());
+  bpmTimer = setTimeout(function cycle() {
+    setMetroBpm(randomBpm());
+    bpmTimer = setTimeout(cycle, 37000);
+  }, 37000);
+}
+
+function stopMetronome() {
+  clearInterval(metroInterval); clearTimeout(bpmTimer);
+  metroInterval = null; bpmTimer = null;
+  document.getElementById('metronomeBar').style.display = 'none';
+  const bar = document.getElementById('metronomeBar');
+  if (bar) bar.querySelectorAll('.metro-circle').forEach(c => c.remove());
+}
+
+// Auto-restore saved credentials
+window.addEventListener('load', () => {
+  const k = localStorage.getItem('ds_apiKey'), c = localStorage.getItem('ds_clientId');
+  if (k) document.getElementById('apiKey').value = k;
+  if (c) document.getElementById('clientId').value = c;
+});
+</script>
+</body>
+</html>
