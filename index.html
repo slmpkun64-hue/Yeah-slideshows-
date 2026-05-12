@@ -675,7 +675,7 @@ let metroBpm = 120, metroInterval = null, bpmTimer = null, audioCtx = null;
 let metroStartTime = null;
 const METRO_RAMP_DURATION = 30 * 60 * 1000; // 30 minutes to fully ramp
 const METRO_MIN_START = 60, METRO_MAX_START = 120;
-const METRO_MIN_END = 110,  METRO_MAX_END = 260;
+const METRO_MIN_END = 200,  METRO_MAX_END = 300;
 
 function randomBpm() {
   const elapsed = metroStartTime ? Math.min(Date.now() - metroStartTime, METRO_RAMP_DURATION) : 0;
