@@ -117,6 +117,8 @@
   #bpmDisplay{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:#444;font-family:monospace;pointer-events:none;transition:color .3s}
   #bpmDisplay.changed{color:var(--accent)}
 
+  #fsExit{display:none;position:fixed;top:14px;right:14px;z-index:400;width:38px;height:38px;border-radius:50%;background:rgba(0,0,0,.6);border:1px solid #444;color:#fff;font-size:18px;align-items:center;justify-content:center;cursor:pointer}
+
   @media (prefers-color-scheme:light){
     :root{--bg:#f5f5f5;--bg2:#fff;--bg3:#f0f0f0;--text:#111;--text2:#555;--text3:#999;--border:#e0e0e0}
     #slideshow,#viewer{background:#111}
@@ -240,6 +242,9 @@
       <button onclick="resetSeenPhotos()" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer">↺ Reset</button>
     </div>
 </div>
+
+<!-- FULLSCREEN EXIT BUTTON -->
+<button id="fsExit" onclick="toggleViewerFullscreen()">✕</button>
 
 <!-- METRONOME BAR (shared between viewer and slideshow) -->
 <div id="metronomeBar" style="display:none">
@@ -400,6 +405,7 @@ async function loadFolder(folderId) {
 function renderFiles(folders, photos) {
   document.getElementById('loadingEl').style.display = 'none';
   folderFiles = folders; photoFiles = photos;
+  loadSeenPhotos();
   const grid = document.getElementById('grid');
   grid.innerHTML = '';
   if (!folders.length && !photos.length) {
@@ -488,11 +494,11 @@ function viewerNext() { viewerIdx = (viewerIdx+1)%photoFiles.length; renderViewe
 function toggleViewerFullscreen() {
   const topBar = document.getElementById('vTopBar');
   const botBar = document.getElementById('vBottomBar');
-  const fsBtn = document.getElementById('fsBtn');
+  const fsExit = document.getElementById('fsExit');
   const isFs = topBar.style.display === 'none';
   topBar.style.display = isFs ? 'flex' : 'none';
   botBar.style.display = isFs ? 'flex' : 'none';
-  fsBtn.textContent = isFs ? '⛶' : '✕';
+  fsExit.style.display = isFs ? 'none' : 'flex';
   if (!isFs && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
   if (isFs && document.exitFullscreen) document.exitFullscreen().catch(()=>{});
 }
@@ -561,6 +567,7 @@ function updateSeenCounter() {
 function resetSeenPhotos() {
   seenPhotos.clear();
   ssLastIndex = null;
+  localStorage.removeItem(seenKey());
   toggleSettings();
   startSlideshow(0);
 }
@@ -569,6 +576,7 @@ function loadSSPhoto() {
   const f = photoFiles[idx];
   seenPhotos.add(idx);
   ssLastIndex = idx;
+  saveSeenPhotos();
   const img = document.getElementById('ssImg');
   document.getElementById('ssFileName').textContent = f.name;
   updateSeenCounter();
@@ -664,7 +672,18 @@ document.addEventListener('keydown', e => {
 /* ===== METRONOME ===== */
 let metroBpm = 120, metroInterval = null, bpmTimer = null, audioCtx = null;
 
-function randomBpm() { return Math.floor(Math.random() * (300 - 60 + 1)) + 60; }
+let metroStartTime = null;
+const METRO_RAMP_DURATION = 30 * 60 * 1000; // 30 minutes to fully ramp
+const METRO_MIN_START = 60, METRO_MAX_START = 120;
+const METRO_MIN_END = 110,  METRO_MAX_END = 260;
+
+function randomBpm() {
+  const elapsed = metroStartTime ? Math.min(Date.now() - metroStartTime, METRO_RAMP_DURATION) : 0;
+  const t = elapsed / METRO_RAMP_DURATION; // 0 → 1
+  const minBpm = Math.round(METRO_MIN_START + t * (METRO_MIN_END - METRO_MIN_START));
+  const maxBpm = Math.round(METRO_MAX_START + t * (METRO_MAX_END - METRO_MAX_START));
+  return Math.floor(Math.random() * (maxBpm - minBpm + 1)) + minBpm;
+}
 
 function playBeep() {
   try {
@@ -688,22 +707,23 @@ function spawnMetroCircle() {
   const c = document.createElement('div');
   c.className = 'metro-circle';
   bar.appendChild(c);
-  let start = null, lit = false;
+
+  // Trigger beep/flash at exact beat time via setTimeout — independent of animation
+  const beepTimer = setTimeout(() => {
+    c.classList.add('lit');
+    playBeep();
+    const mid = document.getElementById('metroMid');
+    if (mid) { mid.classList.add('flash'); setTimeout(() => mid.classList.remove('flash'), 150); }
+    setTimeout(() => c.classList.remove('lit'), 200);
+  }, beatMs);
+
+  let start = null;
   function step(ts) {
     if (!start) start = ts;
     const prog = (ts - start) / duration;
-    const x = prog * barW;
-    c.style.left = x + 'px';
-    if (!lit && x >= barW / 2) {
-      lit = true;
-      c.classList.add('lit');
-      playBeep();
-      const mid = document.getElementById('metroMid');
-      if (mid) { mid.classList.add('flash'); setTimeout(() => mid.classList.remove('flash'), 150); }
-      setTimeout(() => c.classList.remove('lit'), 200);
-    }
+    c.style.left = (prog * barW) + 'px';
     if (prog < 1) requestAnimationFrame(step);
-    else c.remove();
+    else { c.remove(); clearTimeout(beepTimer); }
   }
   requestAnimationFrame(step);
 }
@@ -723,6 +743,7 @@ function setMetroBpm(bpm) {
 
 function startMetronome() {
   stopMetronome();
+  if (!metroStartTime) metroStartTime = Date.now();
   document.getElementById('metronomeBar').style.display = 'block';
   setMetroBpm(randomBpm());
   bpmTimer = setTimeout(function cycle() {
@@ -737,6 +758,23 @@ function stopMetronome() {
   document.getElementById('metronomeBar').style.display = 'none';
   const bar = document.getElementById('metronomeBar');
   if (bar) bar.querySelectorAll('.metro-circle').forEach(c => c.remove());
+}
+
+function seenKey() {
+  const folder = folderStack[folderStack.length - 1];
+  return 'ds_seen_' + (folder ? folder.id : 'root');
+}
+function saveSeenPhotos() {
+  const ids = photoFiles.filter((_,i) => seenPhotos.has(i)).map(f => f.id);
+  localStorage.setItem(seenKey(), JSON.stringify(ids));
+}
+function loadSeenPhotos() {
+  seenPhotos.clear();
+  try {
+    const saved = JSON.parse(localStorage.getItem(seenKey()) || '[]');
+    const idSet = new Set(saved);
+    photoFiles.forEach((f, i) => { if (idSet.has(f.id)) seenPhotos.add(i); });
+  } catch(e) {}
 }
 
 // Auto-restore saved credentials
