@@ -847,12 +847,13 @@ function setMetroBpm(bpm) {
   clearInterval(metroInterval);
   spawnMetroCircle();
   metroInterval = setInterval(spawnMetroCircle, 60000 / metroBpm);
-  const active = activeMetroBar();
-  if (active && active.bpmEl) {
-    active.bpmEl.textContent = metroBpm + ' BPM';
-    active.bpmEl.classList.add('changed');
-    setTimeout(() => active.bpmEl.classList.remove('changed'), 1000);
-  }
+  ['bpmDisplay','bpmDisplayV'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = metroBpm + ' BPM';
+    el.classList.add('changed');
+    setTimeout(() => el.classList.remove('changed'), 1000);
+  });
 }
 
 function startMetronome(inViewer = false) {
