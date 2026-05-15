@@ -71,7 +71,7 @@
   .folder-item:hover{background:var(--bg3)}
   .folder-icon{font-size:32px}
   .folder-name{font-size:11px;color:var(--text2);text-align:center;padding:0 6px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-  .play-btn{position:fixed;bottom:72px;right:20px;width:56px;height:56px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;box-shadow:0 4px 20px rgba(0,0,0,.5);z-index:50;transition:transform .2s}
+  .play-btn{position:fixed;bottom:20px;right:20px;width:56px;height:56px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;box-shadow:0 4px 20px rgba(0,0,0,.5);z-index:50;transition:transform .2s}
   .play-btn:hover{transform:scale(1.08)}
   .play-btn:active{transform:scale(0.95)}
   .photo-count{font-size:12px;color:var(--text3);padding:8px 16px 4px}
@@ -81,7 +81,7 @@
   .ss-img-wrap{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
   .ss-img-wrap img{max-width:100%;max-height:100%;object-fit:contain;transition:opacity .5s}
   .ss-img-wrap img.fade{opacity:0}
-  .ss-controls{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;padding-bottom:calc(12px + 52px);background:rgba(0,0,0,.8);gap:8px}
+  .ss-controls{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(0,0,0,.8);gap:8px}
   .ss-btn{width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;font-size:20px;transition:background .2s;flex-shrink:0}
   .ss-btn:hover{background:rgba(255,255,255,.22)}
   .ss-info{flex:1;text-align:center}
@@ -92,7 +92,7 @@
   .ss-top{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(0,0,0,.8)}
   .ss-title{font-size:14px;font-weight:600}
   .ss-counter{font-size:12px;color:#888}
-  .ss-settings{background:rgba(0,0,0,.9);border-radius:var(--radius);padding:16px;position:absolute;bottom:calc(80px + 52px);right:16px;z-index:10;min-width:200px;border:1px solid #333}
+  .ss-settings{background:rgba(0,0,0,.9);border-radius:var(--radius);padding:16px;position:absolute;bottom:80px;right:16px;z-index:10;min-width:200px;border:1px solid #333}
   .ss-settings h3{font-size:13px;color:var(--text2);margin-bottom:12px}
   .ss-setting-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:13px;gap:12px}
   .ss-setting-row input[type=range]{flex:1;accent-color:var(--accent)}
@@ -106,8 +106,32 @@
   #viewer{display:none;position:fixed;inset:0;background:#000;z-index:200;flex-direction:column}
   #viewer .ss-img-wrap{flex:1}
   #viewer .v-bar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(0,0,0,.8)}
-  #viewer #vBottomBar{padding-bottom:calc(12px + 52px)}
   #viewer .v-name{font-size:13px;color:#ccc;flex:1;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 8px}
+
+  /* Fullscreen: hide top/bottom bars in slideshow when in fs mode */
+  #slideshow.ss-fullscreen .ss-top,
+  #slideshow.ss-fullscreen .ss-controls,
+  #slideshow.ss-fullscreen .ss-progress {
+    display: none !important;
+  }
+  /* Floating exit button for slideshow fullscreen */
+  #ssFsExit {
+    display: none;
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    z-index: 400;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: rgba(0,0,0,.6);
+    border: 1px solid #444;
+    color: #fff;
+    font-size: 18px;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
 
   /* METRONOME BAR */
   #metronomeBar{position:fixed;bottom:0;left:0;right:0;height:52px;background:#0a0a0a;z-index:300;overflow:hidden;border-top:1px solid #1e1e1e;flex-shrink:0}
@@ -214,6 +238,7 @@
     </div>
     <button class="ss-btn" onclick="toggleSettings()" title="Settings">⚙</button>
     <button class="ss-btn" onclick="ssTogglePause()" id="pauseBtn">⏸</button>
+    <button class="ss-btn" onclick="toggleSlideshowFullscreen()" id="ssFsBtn" title="Fullscreen">⛶</button>
     <button class="ss-btn" onclick="ssNext()">▶</button>
   </div>
   <div class="ss-settings" id="ssSettings" style="display:none">
@@ -242,9 +267,13 @@
       <span style="font-size:12px;color:#888">Seen: <span id="seenCount">0</span> / <span id="totalCount">0</span></span>
       <button onclick="resetSeenPhotos()" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer">↺ Reset</button>
     </div>
+  </div>
 </div>
 
-<!-- FULLSCREEN EXIT BUTTON -->
+<!-- SLIDESHOW FULLSCREEN EXIT BUTTON -->
+<button id="ssFsExit" onclick="toggleSlideshowFullscreen()">✕</button>
+
+<!-- FULLSCREEN EXIT BUTTON (viewer) -->
 <button id="fsExit" onclick="toggleViewerFullscreen()">✕</button>
 
 <!-- METRONOME BAR (shared between viewer and slideshow) -->
@@ -273,12 +302,13 @@ const PHOTO_MIME = ['image/jpeg','image/png','image/gif','image/webp','image/hei
 let gapi_ready = false, tokenClient, accessToken = null;
 let folderStack = [{id:'root',name:'My Drive'}];
 let allFiles = [], photoFiles = [], folderFiles = [];
-let ssIndex = 0, ssTimer = null, ssInterval = 20000, ssShuffle = false, ssLoop = true, ssPaused = false;
+let ssIndex = 0, ssTimer = null, ssInterval = 5000, ssShuffle = false, ssLoop = true, ssPaused = false;
 let ssOrder = [], ssTransition = 'fade';
-let ssLastIndex = null;        // remembers position when leaving slideshow
-let seenPhotos = new Set();    // tracks which photo indices have been shown
+let ssLastIndex = null;
+let seenPhotos = new Set();
 let viewerIdx = 0;
 let demoMode = false;
+let ssSlideshowIsFullscreen = false;
 
 const DEMO_PHOTOS = [
   {id:'d1',name:'Sunset over the hills.jpg',thumbnailLink:'https://picsum.photos/seed/sunset/800/600',webContentLink:'https://picsum.photos/seed/sunset/1600/1200'},
@@ -320,24 +350,8 @@ async function startAuth() {
   err.style.display='none';
   localStorage.setItem('ds_apiKey', apiKey);
   localStorage.setItem('ds_clientId', clientId);
-
-  // Wait for preloaded scripts if not ready yet (with timeout)
-  const waitFor = (check, timeout=8000) => new Promise((res, rej) => {
-    if (check()) return res();
-    const t = setInterval(() => { if (check()) { clearInterval(t); res(); } }, 100);
-    setTimeout(() => { clearInterval(t); rej(new Error('Timeout')); }, timeout);
-  });
-
-  try {
-    await waitFor(() => gapiReady && gisReady);
-  } catch(e) {
-    err.textContent = 'Google scripts failed to load. Check your connection.';
-    err.style.display = 'block';
-    return;
-  }
-
+  await Promise.all([loadGAPI(), loadGIS()]);
   await gapi.client.init({ apiKey, discoveryDocs:['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'] });
-
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: clientId, scope: CLIENT_SCOPES,
     callback: (resp) => {
@@ -351,15 +365,12 @@ async function startAuth() {
       if (document.getElementById('app').style.display === 'none') enterApp();
     }
   });
-
-  // Call immediately — scripts are already loaded so this stays within the user gesture
   tokenClient.requestAccessToken({ prompt: 'select_account' });
 }
 
 let tokenRefreshTimer = null;
 function scheduleTokenRefresh(expiresIn) {
   clearTimeout(tokenRefreshTimer);
-  // Refresh 5 minutes before expiry
   const refreshIn = Math.max((expiresIn - 300) * 1000, 10000);
   tokenRefreshTimer = setTimeout(() => {
     if (tokenClient) tokenClient.requestAccessToken({ prompt: '' });
@@ -484,9 +495,7 @@ async function loadImageIntoEl(el, f, retry=true) {
   try {
     const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (resp.status === 401 && retry && tokenClient) {
-      // Token expired — silently refresh then retry once
       await new Promise(res => {
-        const orig = tokenClient._callback || tokenClient.callback;
         tokenClient.requestAccessToken({ prompt: '' });
         const check = setInterval(() => {
           if (accessToken) { clearInterval(check); res(); }
@@ -529,14 +538,61 @@ function closeViewer() {
 }
 function viewerSlideshow() { closeViewer(); startSlideshow(viewerIdx); }
 
+/* ===== SLIDESHOW FULLSCREEN ===== */
+function toggleSlideshowFullscreen() {
+  const ss = document.getElementById('slideshow');
+  const ssFsExit = document.getElementById('ssFsExit');
+  const ssFsBtn = document.getElementById('ssFsBtn');
+
+  if (!ssSlideshowIsFullscreen) {
+    // Enter fullscreen
+    const el = ss.requestFullscreen
+      ? ss
+      : document.documentElement; // fallback: fullscreen the whole page
+    (el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen).call(el)
+      .catch(() => {});
+    ss.classList.add('ss-fullscreen');
+    ssFsExit.style.display = 'flex';
+    ssFsBtn.textContent = '⊠'; // exit icon hint
+    ssSlideshowIsFullscreen = true;
+  } else {
+    // Exit fullscreen
+    (document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen).call(document)
+      .catch(() => {});
+    ss.classList.remove('ss-fullscreen');
+    ssFsExit.style.display = 'none';
+    ssFsBtn.textContent = '⛶';
+    ssSlideshowIsFullscreen = false;
+  }
+}
+
+// Sync our state if the user exits fullscreen via browser (Esc key or browser UI)
+document.addEventListener('fullscreenchange', () => {
+  const ss = document.getElementById('slideshow');
+  if (!document.fullscreenElement) {
+    // Browser exited fullscreen — sync UI
+    if (ssSlideshowIsFullscreen) {
+      ss.classList.remove('ss-fullscreen');
+      document.getElementById('ssFsExit').style.display = 'none';
+      document.getElementById('ssFsBtn').textContent = '⛶';
+      ssSlideshowIsFullscreen = false;
+    }
+    // Also sync viewer fullscreen if needed
+    const vTopBar = document.getElementById('vTopBar');
+    if (vTopBar && vTopBar.style.display === 'none') {
+      vTopBar.style.display = 'flex';
+      document.getElementById('vBottomBar').style.display = 'flex';
+      document.getElementById('fsExit').style.display = 'none';
+    }
+  }
+});
+
 /* ===== SLIDESHOW ===== */
 function buildSSOrder(startIdx=0) {
-  // Build order of unseen photos only
   let unseen = photoFiles.map((_,i)=>i).filter(i => !seenPhotos.has(i));
-  if (unseen.length === 0) return null; // all seen
+  if (unseen.length === 0) return null;
   if (ssShuffle) shuffle(unseen);
   else {
-    // Start from startIdx, wrap around, skip seen
     const sorted = [];
     for (let offset = 0; offset < photoFiles.length; offset++) {
       const i = (startIdx + offset) % photoFiles.length;
@@ -549,11 +605,9 @@ function buildSSOrder(startIdx=0) {
 
 function startSlideshow(startIdx=null) {
   if (!photoFiles.length) return;
-  // Resume from last position if no explicit start given
   const resumeFrom = startIdx !== null ? startIdx : (ssLastIndex !== null ? ssLastIndex : 0);
   const order = buildSSOrder(resumeFrom);
   if (order === null) {
-    // All photos seen — prompt reset
     showAllSeenPrompt();
     return;
   }
@@ -622,7 +676,6 @@ function ssNext() {
   ssIndex++;
   if (ssIndex >= ssOrder.length) {
     if (!ssLoop) { closeSlideshow(); return; }
-    // Rebuild unseen order for next loop
     const order = buildSSOrder(ssLastIndex !== null ? (ssLastIndex + 1) % photoFiles.length : 0);
     if (order === null) { showAllSeenPrompt(); return; }
     ssOrder = order;
@@ -648,7 +701,19 @@ function toggleLoop() {
   ssLoop = !ssLoop;
   document.getElementById('loopToggle').classList.toggle('on', ssLoop);
 }
-function closeSlideshow() { clearTimeout(ssTimer); document.getElementById('slideshow').style.display = 'none'; stopMetronome(); }
+function closeSlideshow() {
+  clearTimeout(ssTimer);
+  // Exit fullscreen first if active
+  if (ssSlideshowIsFullscreen) {
+    (document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen).call(document).catch(()=>{});
+    document.getElementById('slideshow').classList.remove('ss-fullscreen');
+    document.getElementById('ssFsExit').style.display = 'none';
+    document.getElementById('ssFsBtn').textContent = '⛶';
+    ssSlideshowIsFullscreen = false;
+  }
+  document.getElementById('slideshow').style.display = 'none';
+  stopMetronome();
+}
 function toggleSettings() {
   const s = document.getElementById('ssSettings');
   s.style.display = s.style.display === 'none' ? 'block' : 'none';
@@ -679,7 +744,8 @@ document.addEventListener('keydown', e => {
     if (e.key === 'ArrowRight') ssNext();
     if (e.key === 'ArrowLeft') ssPrev();
     if (e.key === ' ') { e.preventDefault(); ssTogglePause(); }
-    if (e.key === 'Escape') closeSlideshow();
+    if (e.key === 'f' || e.key === 'F') toggleSlideshowFullscreen();
+    if (e.key === 'Escape' && !ssSlideshowIsFullscreen) closeSlideshow();
   }
   if (document.getElementById('viewer').style.display !== 'none') {
     if (e.key === 'ArrowRight') viewerNext();
@@ -692,13 +758,13 @@ document.addEventListener('keydown', e => {
 let metroBpm = 120, metroInterval = null, bpmTimer = null, audioCtx = null;
 
 let metroStartTime = null;
-const METRO_RAMP_DURATION = 30 * 60 * 1000; // 30 minutes to fully ramp
+const METRO_RAMP_DURATION = 30 * 60 * 1000;
 const METRO_MIN_START = 60, METRO_MAX_START = 120;
 const METRO_MIN_END = 200,  METRO_MAX_END = 300;
 
 function randomBpm() {
   const elapsed = metroStartTime ? Math.min(Date.now() - metroStartTime, METRO_RAMP_DURATION) : 0;
-  const t = elapsed / METRO_RAMP_DURATION; // 0 → 1
+  const t = elapsed / METRO_RAMP_DURATION;
   const minBpm = Math.round(METRO_MIN_START + t * (METRO_MIN_END - METRO_MIN_START));
   const maxBpm = Math.round(METRO_MAX_START + t * (METRO_MAX_END - METRO_MAX_START));
   return Math.floor(Math.random() * (maxBpm - minBpm + 1)) + minBpm;
@@ -727,7 +793,6 @@ function spawnMetroCircle() {
   c.className = 'metro-circle';
   bar.appendChild(c);
 
-  // Trigger beep/flash at exact beat time via setTimeout — independent of animation
   const beepTimer = setTimeout(() => {
     c.classList.add('lit');
     playBeep();
@@ -796,27 +861,11 @@ function loadSeenPhotos() {
   } catch(e) {}
 }
 
-let gapiReady = false, gisReady = false;
-
-function preloadScripts() {
-  // Load both scripts immediately so they're ready when user clicks Connect
-  const gapiScript = document.createElement('script');
-  gapiScript.src = 'https://apis.google.com/js/api.js';
-  gapiScript.onload = () => gapi.load('client', () => { gapiReady = true; });
-  document.head.appendChild(gapiScript);
-
-  const gisScript = document.createElement('script');
-  gisScript.src = 'https://accounts.google.com/gsi/client';
-  gisScript.onload = () => { gisReady = true; };
-  document.head.appendChild(gisScript);
-}
-
 // Auto-restore saved credentials
 window.addEventListener('load', () => {
   const k = localStorage.getItem('ds_apiKey'), c = localStorage.getItem('ds_clientId');
   if (k) document.getElementById('apiKey').value = k;
   if (c) document.getElementById('clientId').value = c;
-  preloadScripts();
 });
 </script>
 </body>
