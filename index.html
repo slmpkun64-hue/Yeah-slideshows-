@@ -867,7 +867,7 @@ function startMetronome(inViewer = false) {
   }
   if (metroMode === 'constant') {
     setMetroBpm(constantBpm());
-    bpmTimer = setInterval(() => setMetroBpm(constantBpm()), 5000);
+    bpmTimer = setInterval(() => setMetroBpm(constantBpm()), 2000);
   } else {
     setMetroBpm(randomBpm());
     bpmTimer = setTimeout(function cycle() {
