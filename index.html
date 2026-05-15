@@ -815,12 +815,13 @@ function activeMetroBar() {
   return null;
 }
 
-function spawnMetroCircle() {
+function spawnMetroCircle(durationMult, beepDelay) {
   const active = activeMetroBar();
   if (!active) return;
   const { bar, mid } = active;
   const beatMs = 60000 / metroBpm;
-  const duration = beatMs * 4;
+  const duration = beatMs * (durationMult || 2);
+  const delay = beepDelay || 0;
   const barW = bar.offsetWidth;
   const c = document.createElement('div');
   c.className = 'metro-circle';
@@ -831,7 +832,7 @@ function spawnMetroCircle() {
     playBeep();
     if (mid) { mid.classList.add('flash'); setTimeout(() => mid.classList.remove('flash'), 150); }
     setTimeout(() => c.classList.remove('lit'), 200);
-  }, beatMs);
+  }, beatMs + delay);
 
   let start = null;
   function step(ts) {
@@ -844,11 +845,27 @@ function spawnMetroCircle() {
   requestAnimationFrame(step);
 }
 
+let burstTimeout = null;
+function spawnBurst() {
+  const count = Math.floor(Math.random() * 3) + 3; // 3–5 circles
+  const gap = (60000 / metroBpm) * 0.55; // spread ~half a beat apart
+  for (let i = 0; i < count; i++) {
+    setTimeout(() => spawnMetroCircle(4, i * gap), i * gap);
+  }
+}
+
+function scheduleBurst() {
+  const beatsUntilBurst = Math.floor(Math.random() * 3) + 4; // every 4–6 beats
+  burstTimeout = setTimeout(() => { spawnBurst(); scheduleBurst(); }, beatsUntilBurst * (60000 / metroBpm));
+}
+
 function setMetroBpm(bpm) {
   metroBpm = bpm;
   clearInterval(metroInterval);
+  clearTimeout(burstTimeout);
   spawnMetroCircle();
-  metroInterval = setInterval(spawnMetroCircle, 60000 / metroBpm * 2);
+  metroInterval = setInterval(spawnMetroCircle, 60000 / metroBpm);
+  scheduleBurst();
   ['bpmDisplay','bpmDisplayV'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -885,7 +902,7 @@ function startMetronome(inViewer = false) {
 }
 
 function stopMetronome() {
-  clearInterval(metroInterval); clearInterval(bpmTimer); clearTimeout(bpmTimer);
+  clearInterval(metroInterval); clearInterval(bpmTimer); clearTimeout(bpmTimer); clearTimeout(burstTimeout);
   metroInterval = null; bpmTimer = null;
   ['metronomeBar','metronomeBarViewer'].forEach(id => {
     const bar = document.getElementById(id);
