@@ -820,19 +820,24 @@ function activeMetroBar() {
   return null;
 }
 
-function spawnOneCircle(bar, mid, beatMs, offsetPx) {
+function spawnOneCircle(bar, mid, beatMs, offsetPx, barW) {
   const duration = beatMs * 2;
-  const barW = bar.offsetWidth;
   const c = document.createElement('div');
   c.className = 'metro-circle';
   bar.appendChild(c);
+
+  // Circle starts at left=0+offsetPx and reaches center (barW/2) at beatMs.
+  // For burst circles shifted by offsetPx, the center crossing happens when
+  // prog * barW + offsetPx === barW/2, i.e. prog = (barW/2 - offsetPx) / barW.
+  const centerProg = (barW / 2 - offsetPx) / barW;
+  const beepDelay = Math.max(0, centerProg * duration);
 
   const beepTimer = setTimeout(() => {
     c.classList.add('lit');
     playBeep();
     if (mid) { mid.classList.add('flash'); setTimeout(() => mid.classList.remove('flash'), 150); }
     setTimeout(() => c.classList.remove('lit'), 200);
-  }, beatMs);
+  }, beepDelay);
 
   let start = null;
   function step(ts) {
@@ -850,19 +855,20 @@ function spawnMetroCircle() {
   if (!active) return;
   const { bar, mid } = active;
   const beatMs = 60000 / metroBpm;
+  const barW = bar.offsetWidth;
 
-  // ~25% chance of a burst of 3–5 circles
-  const isBurst = Math.random() < 0.25;
+  // ~8% chance of a burst of 3–5 circles
+  const isBurst = Math.random() < 0.08;
   if (isBurst) {
     const count = Math.floor(Math.random() * 3) + 3; // 3–5
     const spacing = 28; // px gap between circles
     const totalSpan = (count - 1) * spacing;
     const startOffset = -totalSpan / 2;
     for (let i = 0; i < count; i++) {
-      spawnOneCircle(bar, mid, beatMs, startOffset + i * spacing);
+      spawnOneCircle(bar, mid, beatMs, startOffset + i * spacing, barW);
     }
   } else {
-    spawnOneCircle(bar, mid, beatMs, 0);
+    spawnOneCircle(bar, mid, beatMs, 0, barW);
   }
 }
 
