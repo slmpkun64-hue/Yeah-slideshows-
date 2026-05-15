@@ -779,8 +779,10 @@ function randomBpm() {
 }
 
 const METRO_CONST_START = 60, METRO_CONST_END = 270;
+let metroConstStartTime = null;
 function constantBpm() {
-  const elapsed = metroStartTime ? Math.min(Date.now() - metroStartTime, METRO_RAMP_DURATION) : 0;
+  if (!metroConstStartTime) return METRO_CONST_START;
+  const elapsed = Math.min(Date.now() - metroConstStartTime, METRO_RAMP_DURATION);
   const t = elapsed / METRO_RAMP_DURATION;
   return Math.round(METRO_CONST_START + t * (METRO_CONST_END - METRO_CONST_START));
 }
@@ -889,8 +891,12 @@ function startMetronome(inViewer = false) {
     document.getElementById('metronomeBar').style.display = 'block';
   }
   if (metroMode === 'constant') {
-    setMetroBpm(constantBpm());
-    bpmTimer = setInterval(() => setMetroBpm(constantBpm()), 2000);
+    metroConstStartTime = Date.now();
+    setMetroBpm(METRO_CONST_START);
+    bpmTimer = setInterval(() => {
+      const next = constantBpm();
+      if (next > metroBpm) setMetroBpm(next);
+    }, 2000);
   } else {
     setMetroBpm(randomBpm());
     bpmTimer = setTimeout(function cycle() {
