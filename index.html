@@ -820,7 +820,7 @@ function spawnMetroCircle() {
   if (!active) return;
   const { bar, mid } = active;
   const beatMs = 60000 / metroBpm;
-  const duration = beatMs * 2;
+  const duration = beatMs * 4;
   const barW = bar.offsetWidth;
   const c = document.createElement('div');
   c.className = 'metro-circle';
@@ -848,7 +848,7 @@ function setMetroBpm(bpm) {
   metroBpm = bpm;
   clearInterval(metroInterval);
   spawnMetroCircle();
-  metroInterval = setInterval(spawnMetroCircle, 60000 / metroBpm);
+  metroInterval = setInterval(spawnMetroCircle, 60000 / metroBpm * 2);
   ['bpmDisplay','bpmDisplayV'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
