@@ -273,7 +273,7 @@ const PHOTO_MIME = ['image/jpeg','image/png','image/gif','image/webp','image/hei
 let gapi_ready = false, tokenClient, accessToken = null;
 let folderStack = [{id:'root',name:'My Drive'}];
 let allFiles = [], photoFiles = [], folderFiles = [];
-let ssIndex = 0, ssTimer = null, ssInterval = 5000, ssShuffle = false, ssLoop = true, ssPaused = false;
+let ssIndex = 0, ssTimer = null, ssInterval = 20000, ssShuffle = false, ssLoop = true, ssPaused = false;
 let ssOrder = [], ssTransition = 'fade';
 let ssLastIndex = null;        // remembers position when leaving slideshow
 let seenPhotos = new Set();    // tracks which photo indices have been shown
