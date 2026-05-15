@@ -815,13 +815,12 @@ function activeMetroBar() {
   return null;
 }
 
-function spawnMetroCircle(durationMult, beepDelay) {
+function spawnMetroCircle(durationMult) {
   const active = activeMetroBar();
   if (!active) return;
   const { bar, mid } = active;
   const beatMs = 60000 / metroBpm;
   const duration = beatMs * (durationMult || 2);
-  const delay = beepDelay || 0;
   const barW = bar.offsetWidth;
   const c = document.createElement('div');
   c.className = 'metro-circle';
@@ -832,7 +831,7 @@ function spawnMetroCircle(durationMult, beepDelay) {
     playBeep();
     if (mid) { mid.classList.add('flash'); setTimeout(() => mid.classList.remove('flash'), 150); }
     setTimeout(() => c.classList.remove('lit'), 200);
-  }, beatMs + delay);
+  }, duration / 2);
 
   let start = null;
   function step(ts) {
@@ -849,9 +848,15 @@ let burstTimeout = null;
 function spawnBurst() {
   const count = Math.floor(Math.random() * 3) + 3; // 3–5 circles
   const gap = (60000 / metroBpm) * 0.55; // spread ~half a beat apart
+  // Pause regular interval for the duration of the burst
+  clearInterval(metroInterval);
   for (let i = 0; i < count; i++) {
-    setTimeout(() => spawnMetroCircle(4, i * gap), i * gap);
+    setTimeout(() => spawnMetroCircle(2), i * gap);
   }
+  // Resume regular interval right after the last burst circle spawns
+  setTimeout(() => {
+    metroInterval = setInterval(spawnMetroCircle, 60000 / metroBpm);
+  }, gap * (count - 1));
 }
 
 function scheduleBurst() {
