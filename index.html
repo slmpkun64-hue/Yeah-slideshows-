@@ -134,7 +134,7 @@
   }
 
   /* METRONOME BAR */
-  #metronomeBar{position:fixed;bottom:0;left:0;right:0;height:52px;background:#0a0a0a;z-index:300;overflow:hidden;border-top:1px solid #1e1e1e;flex-shrink:0}
+  #metronomeBar{height:52px;background:#0a0a0a;overflow:hidden;border-top:1px solid #1e1e1e;flex-shrink:0;position:relative;width:100%}
   #metroMid{position:absolute;left:50%;top:0;width:2px;height:100%;background:#2a2a2a;transform:translateX(-50%);transition:background .08s,box-shadow .08s}
   #metroMid.flash{background:var(--accent);box-shadow:0 0 12px var(--accent)}
   .metro-circle{position:absolute;width:22px;height:22px;border-radius:50%;background:#333;border:2px solid #444;top:50%;transform:translate(-50%,-50%);transition:background .08s,box-shadow .08s,border-color .08s}
@@ -241,6 +241,10 @@
     <button class="ss-btn" onclick="toggleSlideshowFullscreen()" id="ssFsBtn" title="Fullscreen">⛶</button>
     <button class="ss-btn" onclick="ssNext()">▶</button>
   </div>
+  <div id="metronomeBar" style="display:none">
+    <div id="metroMid"></div>
+    <span id="bpmDisplay"></span>
+  </div>
   <div class="ss-settings" id="ssSettings" style="display:none">
     <h3>Slideshow settings</h3>
     <div class="ss-setting-row">
@@ -276,11 +280,6 @@
 <!-- FULLSCREEN EXIT BUTTON (viewer) -->
 <button id="fsExit" onclick="toggleViewerFullscreen()">✕</button>
 
-<!-- METRONOME BAR (shared between viewer and slideshow) -->
-<div id="metronomeBar" style="display:none">
-  <div id="metroMid"></div>
-  <span id="bpmDisplay"></span>
-</div>
 <div id="viewer">
   <div class="v-bar" id="vTopBar">
     <button onclick="closeViewer()" style="font-size:22px;color:#aaa;background:none;border:none;cursor:pointer">✕</button>
@@ -293,6 +292,10 @@
     <span id="vCounter" style="font-size:13px;color:#888;flex:1;text-align:center"></span>
     <button onclick="toggleViewerFullscreen()" class="ss-btn" id="fsBtn" title="Fullscreen">⛶</button>
     <button onclick="viewerNext()" class="ss-btn">▶</button>
+  </div>
+  <div id="metronomeBarViewer" style="display:none;height:52px;background:#0a0a0a;overflow:hidden;border-top:1px solid #1e1e1e;flex-shrink:0;position:relative;width:100%">
+    <div id="metroMidV" style="position:absolute;left:50%;top:0;width:2px;height:100%;background:#2a2a2a;transform:translateX(-50%);transition:background .08s,box-shadow .08s"></div>
+    <span id="bpmDisplayV" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:#444;font-family:monospace;pointer-events:none;transition:color .3s"></span>
   </div>
 </div>
 
@@ -487,7 +490,7 @@ function openViewer(idx) {
   viewerIdx = idx;
   document.getElementById('viewer').style.display = 'flex';
   renderViewer();
-  startMetronome();
+  startMetronome(true);
 }
 async function loadImageIntoEl(el, f, retry=true) {
   if (demoMode) { el.src = f.webContentLink; return; }
@@ -783,9 +786,19 @@ function playBeep() {
   } catch(e) {}
 }
 
+// Returns whichever metronome bar is currently visible
+function activeMetroBar() {
+  const ss = document.getElementById('metronomeBar');
+  const vw = document.getElementById('metronomeBarViewer');
+  if (ss && ss.style.display !== 'none') return { bar: ss, mid: document.getElementById('metroMid'), bpmEl: document.getElementById('bpmDisplay') };
+  if (vw && vw.style.display !== 'none') return { bar: vw, mid: document.getElementById('metroMidV'), bpmEl: document.getElementById('bpmDisplayV') };
+  return null;
+}
+
 function spawnMetroCircle() {
-  const bar = document.getElementById('metronomeBar');
-  if (!bar) return;
+  const active = activeMetroBar();
+  if (!active) return;
+  const { bar, mid } = active;
   const beatMs = 60000 / metroBpm;
   const duration = beatMs * 2;
   const barW = bar.offsetWidth;
@@ -796,7 +809,6 @@ function spawnMetroCircle() {
   const beepTimer = setTimeout(() => {
     c.classList.add('lit');
     playBeep();
-    const mid = document.getElementById('metroMid');
     if (mid) { mid.classList.add('flash'); setTimeout(() => mid.classList.remove('flash'), 150); }
     setTimeout(() => c.classList.remove('lit'), 200);
   }, beatMs);
@@ -817,18 +829,24 @@ function setMetroBpm(bpm) {
   clearInterval(metroInterval);
   spawnMetroCircle();
   metroInterval = setInterval(spawnMetroCircle, 60000 / metroBpm);
-  const el = document.getElementById('bpmDisplay');
-  if (el) {
-    el.textContent = metroBpm + ' BPM';
-    el.classList.add('changed');
-    setTimeout(() => el.classList.remove('changed'), 1000);
+  const active = activeMetroBar();
+  if (active && active.bpmEl) {
+    active.bpmEl.textContent = metroBpm + ' BPM';
+    active.bpmEl.classList.add('changed');
+    setTimeout(() => active.bpmEl.classList.remove('changed'), 1000);
   }
 }
 
-function startMetronome() {
+function startMetronome(inViewer = false) {
   stopMetronome();
   if (!metroStartTime) metroStartTime = Date.now();
-  document.getElementById('metronomeBar').style.display = 'block';
+  if (inViewer) {
+    document.getElementById('metronomeBar').style.display = 'none';
+    document.getElementById('metronomeBarViewer').style.display = 'block';
+  } else {
+    document.getElementById('metronomeBarViewer').style.display = 'none';
+    document.getElementById('metronomeBar').style.display = 'block';
+  }
   setMetroBpm(randomBpm());
   bpmTimer = setTimeout(function cycle() {
     setMetroBpm(randomBpm());
@@ -839,9 +857,10 @@ function startMetronome() {
 function stopMetronome() {
   clearInterval(metroInterval); clearTimeout(bpmTimer);
   metroInterval = null; bpmTimer = null;
-  document.getElementById('metronomeBar').style.display = 'none';
-  const bar = document.getElementById('metronomeBar');
-  if (bar) bar.querySelectorAll('.metro-circle').forEach(c => c.remove());
+  ['metronomeBar','metronomeBarViewer'].forEach(id => {
+    const bar = document.getElementById(id);
+    if (bar) { bar.style.display = 'none'; bar.querySelectorAll('.metro-circle').forEach(c => c.remove()); }
+  });
 }
 
 function seenKey() {
