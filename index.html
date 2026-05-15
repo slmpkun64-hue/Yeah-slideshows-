@@ -789,6 +789,11 @@ function toggleMetroMode() {
   metroMode = metroMode === 'random' ? 'constant' : 'random';
   const btn = document.getElementById('metroModeBtn');
   btn.textContent = metroMode === 'random' ? 'Random' : 'Constant';
+  // Restart so the new mode takes effect immediately
+  const inViewer = document.getElementById('metronomeBarViewer').style.display !== 'none';
+  if (document.getElementById('metronomeBar').style.display !== 'none' || inViewer) {
+    startMetronome(inViewer);
+  }
 }
 
 function playBeep() {
@@ -813,11 +818,7 @@ function activeMetroBar() {
   return null;
 }
 
-function spawnMetroCircle() {
-  const active = activeMetroBar();
-  if (!active) return;
-  const { bar, mid } = active;
-  const beatMs = 60000 / metroBpm;
+function spawnOneCircle(bar, mid, beatMs, offsetPx) {
   const duration = beatMs * 2;
   const barW = bar.offsetWidth;
   const c = document.createElement('div');
@@ -835,11 +836,32 @@ function spawnMetroCircle() {
   function step(ts) {
     if (!start) start = ts;
     const prog = (ts - start) / duration;
-    c.style.left = (prog * barW) + 'px';
+    c.style.left = (prog * barW + offsetPx) + 'px';
     if (prog < 1) requestAnimationFrame(step);
     else { c.remove(); clearTimeout(beepTimer); }
   }
   requestAnimationFrame(step);
+}
+
+function spawnMetroCircle() {
+  const active = activeMetroBar();
+  if (!active) return;
+  const { bar, mid } = active;
+  const beatMs = 60000 / metroBpm;
+
+  // ~25% chance of a burst of 3–5 circles
+  const isBurst = Math.random() < 0.25;
+  if (isBurst) {
+    const count = Math.floor(Math.random() * 3) + 3; // 3–5
+    const spacing = 28; // px gap between circles
+    const totalSpan = (count - 1) * spacing;
+    const startOffset = -totalSpan / 2;
+    for (let i = 0; i < count; i++) {
+      spawnOneCircle(bar, mid, beatMs, startOffset + i * spacing);
+    }
+  } else {
+    spawnOneCircle(bar, mid, beatMs, 0);
+  }
 }
 
 function setMetroBpm(bpm) {
