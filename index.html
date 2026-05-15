@@ -267,6 +267,10 @@
       <span>Loop</span>
       <div class="toggle on" id="loopToggle" onclick="toggleLoop()"></div>
     </div>
+    <div class="ss-setting-row" style="margin-top:10px;border-top:1px solid #333;padding-top:10px">
+      <span>Metronome</span>
+      <button id="metroModeBtn" onclick="toggleMetroMode()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer">Random</button>
+    </div>
     <div class="ss-setting-row" style="margin-top:14px;border-top:1px solid #333;padding-top:12px">
       <span style="font-size:12px;color:#888">Seen: <span id="seenCount">0</span> / <span id="totalCount">0</span></span>
       <button onclick="resetSeenPhotos()" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer">↺ Reset</button>
@@ -759,6 +763,7 @@ document.addEventListener('keydown', e => {
 
 /* ===== METRONOME ===== */
 let metroBpm = 120, metroInterval = null, bpmTimer = null, audioCtx = null;
+let metroMode = 'random'; // 'random' | 'constant'
 
 let metroStartTime = null;
 const METRO_RAMP_DURATION = 30 * 60 * 1000;
@@ -771,6 +776,19 @@ function randomBpm() {
   const minBpm = Math.round(METRO_MIN_START + t * (METRO_MIN_END - METRO_MIN_START));
   const maxBpm = Math.round(METRO_MAX_START + t * (METRO_MAX_END - METRO_MAX_START));
   return Math.floor(Math.random() * (maxBpm - minBpm + 1)) + minBpm;
+}
+
+const METRO_CONST_START = 60, METRO_CONST_END = 270;
+function constantBpm() {
+  const elapsed = metroStartTime ? Math.min(Date.now() - metroStartTime, METRO_RAMP_DURATION) : 0;
+  const t = elapsed / METRO_RAMP_DURATION;
+  return Math.round(METRO_CONST_START + t * (METRO_CONST_END - METRO_CONST_START));
+}
+
+function toggleMetroMode() {
+  metroMode = metroMode === 'random' ? 'constant' : 'random';
+  const btn = document.getElementById('metroModeBtn');
+  btn.textContent = metroMode === 'random' ? 'Random' : 'Constant';
 }
 
 function playBeep() {
@@ -847,15 +865,20 @@ function startMetronome(inViewer = false) {
     document.getElementById('metronomeBarViewer').style.display = 'none';
     document.getElementById('metronomeBar').style.display = 'block';
   }
-  setMetroBpm(randomBpm());
-  bpmTimer = setTimeout(function cycle() {
+  if (metroMode === 'constant') {
+    setMetroBpm(constantBpm());
+    bpmTimer = setInterval(() => setMetroBpm(constantBpm()), 5000);
+  } else {
     setMetroBpm(randomBpm());
-    bpmTimer = setTimeout(cycle, 37000);
-  }, 37000);
+    bpmTimer = setTimeout(function cycle() {
+      setMetroBpm(randomBpm());
+      bpmTimer = setTimeout(cycle, 37000);
+    }, 37000);
+  }
 }
 
 function stopMetronome() {
-  clearInterval(metroInterval); clearTimeout(bpmTimer);
+  clearInterval(metroInterval); clearInterval(bpmTimer); clearTimeout(bpmTimer);
   metroInterval = null; bpmTimer = null;
   ['metronomeBar','metronomeBarViewer'].forEach(id => {
     const bar = document.getElementById(id);
