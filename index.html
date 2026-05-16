@@ -269,6 +269,26 @@
       <span>Metronome</span>
       <button id="metroModeBtn" onclick="toggleMetroMode()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer">Random</button>
     </div>
+    <div class="ss-setting-row" id="metroRowInterval">
+      <span style="font-size:12px;color:#aaa">BPM change every</span>
+      <input type="range" min="5" max="120" value="37" id="metroBpmIntervalSlider" oninput="updateMetroBpmInterval(this.value)">
+      <span id="metroBpmIntervalVal" style="min-width:40px;font-size:12px;color:var(--text2)">37s</span>
+    </div>
+    <div class="ss-setting-row" id="metroRowStep">
+      <span style="font-size:12px;color:#aaa">Step size</span>
+      <input type="range" min="1" max="20" value="1" id="metroConstStepSlider" oninput="updateMetroConstStep(this.value)">
+      <span id="metroConstStepVal" style="min-width:48px;font-size:12px;color:var(--text2)">1 BPM</span>
+    </div>
+    <div class="ss-setting-row" id="metroRowStartBpm">
+      <span style="font-size:12px;color:#aaa">Start BPM</span>
+      <input type="range" min="40" max="200" value="60" id="metroConstStartBpmSlider" oninput="updateMetroConstStartBpm(this.value)">
+      <span id="metroConstStartBpmVal" style="min-width:48px;font-size:12px;color:var(--text2)">60 BPM</span>
+    </div>
+    <div class="ss-setting-row">
+      <span style="font-size:12px;color:#aaa">Ramp duration</span>
+      <input type="range" min="5" max="60" value="30" id="metroRampDurationSlider" oninput="updateMetroRampDuration(this.value)">
+      <span id="metroRampDurationVal" style="min-width:48px;font-size:12px;color:var(--text2)">30min</span>
+    </div>
     <div class="ss-setting-row" style="margin-top:14px;border-top:1px solid #333;padding-top:12px">
       <span style="font-size:12px;color:#888">Seen: <span id="seenCount">0</span> / <span id="totalCount">0</span></span>
       <button onclick="resetSeenPhotos()" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer">↺ Reset</button>
@@ -701,10 +721,12 @@ function ssToggleShuffle() {
   const t = document.getElementById('shuffleToggle');
   t.classList.toggle('on', ssShuffle);
   if (ssShuffle) shuffle(ssOrder);
+  saveSettings();
 }
 function toggleLoop() {
   ssLoop = !ssLoop;
   document.getElementById('loopToggle').classList.toggle('on', ssLoop);
+  saveSettings();
 }
 function closeSlideshow() {
   clearTimeout(ssTimer);
@@ -723,8 +745,85 @@ function toggleSettings() {
   const s = document.getElementById('ssSettings');
   s.style.display = s.style.display === 'none' ? 'block' : 'none';
 }
-function updateInterval(v) { ssInterval = v*1000; document.getElementById('intervalVal').textContent = v+'s'; scheduleSS(); }
-function updateTransition(v) { ssTransition = v; }
+function saveSettings() {
+  localStorage.setItem('ds_settings', JSON.stringify({
+    ssInterval, ssTransition, ssShuffle, ssLoop, metroMode,
+    metroBpmInterval, metroConstStep, metroConstStartBpm, metroRampDuration
+  }));
+}
+function loadSettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem('ds_settings'));
+    if (!s) return;
+    if (s.ssInterval) {
+      ssInterval = s.ssInterval;
+      const slider = document.getElementById('intervalSlider');
+      const v = ssInterval / 1000;
+      slider.value = v;
+      document.getElementById('intervalVal').textContent = v + 's';
+    }
+    if (s.ssTransition) {
+      ssTransition = s.ssTransition;
+      document.getElementById('transitionSel').value = ssTransition;
+    }
+    if (s.ssShuffle) {
+      ssShuffle = s.ssShuffle;
+      document.getElementById('shuffleToggle').classList.toggle('on', ssShuffle);
+    }
+    if (s.ssLoop === false) {
+      ssLoop = false;
+      document.getElementById('loopToggle').classList.remove('on');
+    }
+    if (s.metroMode) {
+      metroMode = s.metroMode;
+      document.getElementById('metroModeBtn').textContent = metroMode === 'random' ? 'Random' : 'Constant';
+    }
+    if (s.metroBpmInterval) {
+      metroBpmInterval = s.metroBpmInterval;
+      document.getElementById('metroBpmIntervalSlider').value = metroBpmInterval;
+      document.getElementById('metroBpmIntervalVal').textContent = metroBpmInterval + 's';
+    }
+    if (s.metroConstStep) {
+      metroConstStep = s.metroConstStep;
+      document.getElementById('metroConstStepSlider').value = metroConstStep;
+      document.getElementById('metroConstStepVal').textContent = metroConstStep + ' BPM';
+    }
+    if (s.metroConstStartBpm) {
+      metroConstStartBpm = s.metroConstStartBpm;
+      document.getElementById('metroConstStartBpmSlider').value = metroConstStartBpm;
+      document.getElementById('metroConstStartBpmVal').textContent = metroConstStartBpm + ' BPM';
+    }
+    if (s.metroRampDuration) {
+      metroRampDuration = s.metroRampDuration;
+      const mins = Math.round(metroRampDuration / 60000);
+      document.getElementById('metroRampDurationSlider').value = mins;
+      document.getElementById('metroRampDurationVal').textContent = mins + 'min';
+    }
+    updateMetroSettingsVisibility();
+  } catch(e) {}
+}
+function updateInterval(v) { ssInterval = v*1000; document.getElementById('intervalVal').textContent = v+'s'; scheduleSS(); saveSettings(); }
+function updateTransition(v) { ssTransition = v; saveSettings(); }
+function updateMetroBpmInterval(v) {
+  metroBpmInterval = +v;
+  document.getElementById('metroBpmIntervalVal').textContent = v + 's';
+  saveSettings();
+}
+function updateMetroConstStep(v) {
+  metroConstStep = +v;
+  document.getElementById('metroConstStepVal').textContent = v + ' BPM';
+  saveSettings();
+}
+function updateMetroConstStartBpm(v) {
+  metroConstStartBpm = +v;
+  document.getElementById('metroConstStartBpmVal').textContent = v + ' BPM';
+  saveSettings();
+}
+function updateMetroRampDuration(v) {
+  metroRampDuration = v * 60 * 1000;
+  document.getElementById('metroRampDurationVal').textContent = v + 'min';
+  saveSettings();
+}
 function shuffle(arr) { for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]];} }
 
 // Touch swipe for slideshow
@@ -761,31 +860,43 @@ let metroBpm = 120, metroInterval = null, bpmTimer = null, audioCtx = null;
 let metroMode = 'random'; // 'random' | 'constant'
 
 let metroStartTime = null;
-const METRO_RAMP_DURATION = 30 * 60 * 1000;
+let metroRampDuration = 30 * 60 * 1000; // ms, both modes
+let metroBpmInterval = 37;              // seconds between random BPM changes
+let metroConstStartBpm = 60;            // constant mode start BPM
+let metroConstStep = 1;                 // BPM added per tick in constant mode
 const METRO_MIN_START = 60, METRO_MAX_START = 120;
 const METRO_MIN_END = 200,  METRO_MAX_END = 300;
 
 function randomBpm() {
-  const elapsed = metroStartTime ? Math.min(Date.now() - metroStartTime, METRO_RAMP_DURATION) : 0;
-  const t = elapsed / METRO_RAMP_DURATION;
+  const elapsed = metroStartTime ? Math.min(Date.now() - metroStartTime, metroRampDuration) : 0;
+  const t = elapsed / metroRampDuration;
   const minBpm = Math.round(METRO_MIN_START + t * (METRO_MIN_END - METRO_MIN_START));
   const maxBpm = Math.round(METRO_MAX_START + t * (METRO_MAX_END - METRO_MAX_START));
   return Math.floor(Math.random() * (maxBpm - minBpm + 1)) + minBpm;
 }
 
-const METRO_CONST_START = 60, METRO_CONST_END = 270;
+const METRO_CONST_END = 270;
 let metroConstStartTime = null;
 function constantBpm() {
-  if (!metroConstStartTime) return METRO_CONST_START;
-  const elapsed = Math.min(Date.now() - metroConstStartTime, METRO_RAMP_DURATION);
-  const t = elapsed / METRO_RAMP_DURATION;
-  return Math.round(METRO_CONST_START + t * (METRO_CONST_END - METRO_CONST_START));
+  if (!metroConstStartTime) return metroConstStartBpm;
+  const elapsed = Math.min(Date.now() - metroConstStartTime, metroRampDuration);
+  const t = elapsed / metroRampDuration;
+  return Math.round(metroConstStartBpm + t * (METRO_CONST_END - metroConstStartBpm));
+}
+
+function updateMetroSettingsVisibility() {
+  const isRandom = metroMode === 'random';
+  document.getElementById('metroRowInterval').style.display = isRandom ? '' : 'none';
+  document.getElementById('metroRowStep').style.display = isRandom ? 'none' : '';
+  document.getElementById('metroRowStartBpm').style.display = isRandom ? 'none' : '';
 }
 
 function toggleMetroMode() {
   metroMode = metroMode === 'random' ? 'constant' : 'random';
   const btn = document.getElementById('metroModeBtn');
   btn.textContent = metroMode === 'random' ? 'Random' : 'Constant';
+  updateMetroSettingsVisibility();
+  saveSettings();
   // Restart so the new mode takes effect immediately
   const inViewer = document.getElementById('metronomeBarViewer').style.display !== 'none';
   if (document.getElementById('metronomeBar').style.display !== 'none' || inViewer) {
@@ -844,7 +955,6 @@ function spawnMetroCircle() {
   requestAnimationFrame(step);
 }
 
-
 function setMetroBpm(bpm) {
   metroBpm = bpm;
   clearInterval(metroInterval);
@@ -871,17 +981,19 @@ function startMetronome(inViewer = false) {
   }
   if (metroMode === 'constant') {
     metroConstStartTime = Date.now();
-    setMetroBpm(METRO_CONST_START);
+    setMetroBpm(metroConstStartBpm);
     bpmTimer = setInterval(() => {
       const next = constantBpm();
-      if (next > metroBpm) setMetroBpm(next);
+      const stepped = metroBpm + metroConstStep;
+      const target = Math.min(next, stepped);
+      if (target > metroBpm) setMetroBpm(target);
     }, 2000);
   } else {
     setMetroBpm(randomBpm());
     bpmTimer = setTimeout(function cycle() {
       setMetroBpm(randomBpm());
-      bpmTimer = setTimeout(cycle, 37000);
-    }, 37000);
+      bpmTimer = setTimeout(cycle, metroBpmInterval * 1000);
+    }, metroBpmInterval * 1000);
   }
 }
 
@@ -911,11 +1023,13 @@ function loadSeenPhotos() {
   } catch(e) {}
 }
 
-// Auto-restore saved credentials
+// Auto-restore saved credentials and settings
 window.addEventListener('load', () => {
   const k = localStorage.getItem('ds_apiKey'), c = localStorage.getItem('ds_clientId');
   if (k) document.getElementById('apiKey').value = k;
   if (c) document.getElementById('clientId').value = c;
+  loadSettings();
+  updateMetroSettingsVisibility();
 });
 </script>
 </body>
