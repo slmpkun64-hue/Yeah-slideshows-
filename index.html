@@ -958,7 +958,6 @@ function spawnMetroCircle() {
 function setMetroBpm(bpm) {
   metroBpm = bpm;
   clearInterval(metroInterval);
-  spawnMetroCircle();
   metroInterval = setInterval(spawnMetroCircle, 60000 / metroBpm);
   ['bpmDisplay','bpmDisplayV'].forEach(id => {
     const el = document.getElementById(id);
