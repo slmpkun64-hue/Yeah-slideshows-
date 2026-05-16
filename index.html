@@ -245,6 +245,7 @@
     <div id="metroMid"></div>
     <span id="bpmDisplay"></span>
     <span id="bpmNext" class="bpm-next"></span>
+    <span id="minDisplay" class="bpm-next"></span>
   </div>
   <div class="ss-settings" id="ssSettings" style="display:none">
     <h3>Slideshow settings</h3>
@@ -322,6 +323,7 @@
     <div id="metroMidV" style="position:absolute;left:50%;top:0;width:2px;height:100%;background:#2a2a2a;transform:translateX(-50%);transition:background .08s,box-shadow .08s"></div>
     <span id="bpmDisplayV" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:#444;font-family:monospace;pointer-events:none;transition:color .3s"></span>
     <span id="bpmNextV" class="bpm-next" style="position:absolute;right:10px;top:calc(50% + 12px);transform:translateY(-50%)"></span>
+    <span id="minDisplayV" class="bpm-next" style="position:absolute;right:10px;top:calc(50% + 22px);transform:translateY(-50%)"></span>
   </div>
 </div>
 
@@ -892,6 +894,40 @@ function stopBpmCountdown() {
 let metroBpm = 120, metroInterval = null, bpmTimer = null, audioCtx = null;
 let metroMode = 'random'; // 'random' | 'constant'
 
+let minCounterTimer = null;
+function startMinCounter() {
+  const origin = Date.now();
+  clearInterval(minCounterTimer);
+  function tick() {
+    const secs = Math.floor((Date.now() - origin) / 1000);
+    const m = Math.floor(secs / 60), s = secs % 60;
+    const txt = m + ':' + String(s).padStart(2, '0');
+    ['minDisplay','minDisplayV'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = txt;
+    });
+  }
+  tick();
+  minCounterTimer = setInterval(tick, 1000);
+}
+function stopMinCounter() {
+  clearInterval(minCounterTimer);
+  ['minDisplay','minDisplayV'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '';
+  });
+}
+function updateMinBpmDisplay() {
+  const elapsed = metroStartTime ? Math.min(Date.now() - metroStartTime, metroRampDuration) : 0;
+  const t = elapsed / metroRampDuration;
+  const minBpm = Math.round(METRO_MIN_START + t * (METRO_MIN_END - METRO_MIN_START));
+  const txt = metroMode === 'random' ? 'min: ' + minBpm : '';
+  ['minDisplay','minDisplayV'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = txt;
+  });
+}
+
 let metroStartTime = null;
 let metroRampDuration = 30 * 60 * 1000; // ms, both modes
 let metroBpmInterval = 37;              // seconds between random BPM changes
@@ -937,16 +973,22 @@ function toggleMetroMode() {
   }
 }
 
+function scheduleBeep(whenCtxTime) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.type = 'sine'; osc.frequency.value = 880;
+  gain.gain.setValueAtTime(0.25, whenCtxTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, whenCtxTime + 0.12);
+  osc.start(whenCtxTime);
+  osc.stop(whenCtxTime + 0.12);
+}
+
 function playBeep() {
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.connect(gain); gain.connect(audioCtx.destination);
-    osc.type = 'sine'; osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
-    osc.start(audioCtx.currentTime); osc.stop(audioCtx.currentTime + 0.12);
+    scheduleBeep(audioCtx.currentTime);
   } catch(e) {}
 }
 
@@ -966,24 +1008,32 @@ function spawnMetroCircle() {
   const beatMs = 60000 / metroBpm;
   const duration = beatMs * 2;
   const barW = bar.offsetWidth;
+
   const c = document.createElement('div');
   c.className = 'metro-circle';
+  // Start off-screen left; use transform for GPU compositing
+  c.style.cssText = 'will-change:transform;left:0;transform:translateX(0)';
   bar.appendChild(c);
 
-  const beepTimer = setTimeout(() => {
-    c.classList.add('lit');
-    playBeep();
-    if (mid) { mid.classList.add('flash'); setTimeout(() => mid.classList.remove('flash'), 150); }
-    setTimeout(() => c.classList.remove('lit'), 200);
-  }, beatMs);
+  // Schedule beep precisely via Web Audio clock
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const beepAt = audioCtx.currentTime + beatMs / 1000;
+    scheduleBeep(beepAt);
+    // Visual flash timed via setTimeout (display only, latency-tolerant)
+    setTimeout(() => {
+      c.classList.add('lit');
+      if (mid) { mid.classList.add('flash'); setTimeout(() => mid.classList.remove('flash'), 150); }
+      setTimeout(() => c.classList.remove('lit'), 200);
+    }, beatMs);
+  } catch(e) {}
 
-  let start = null;
+  const startWall = performance.now();
   function step(ts) {
-    if (!start) start = ts;
-    const prog = (ts - start) / duration;
-    c.style.left = (prog * barW) + 'px';
+    const prog = Math.min((ts - startWall) / duration, 1);
+    c.style.transform = `translateX(${prog * barW}px)`;
     if (prog < 1) requestAnimationFrame(step);
-    else { c.remove(); clearTimeout(beepTimer); }
+    else c.remove();
   }
   requestAnimationFrame(step);
 }
@@ -999,11 +1049,13 @@ function setMetroBpm(bpm) {
     el.classList.add('changed');
     setTimeout(() => el.classList.remove('changed'), 1000);
   });
+  updateMinBpmDisplay();
 }
 
 function startMetronome(inViewer = false) {
   stopMetronome();
   if (!metroStartTime) metroStartTime = Date.now();
+  updateMinBpmDisplay();
   if (inViewer) {
     document.getElementById('metronomeBar').style.display = 'none';
     document.getElementById('metronomeBarViewer').style.display = 'block';
@@ -1035,6 +1087,7 @@ function startMetronome(inViewer = false) {
 function stopMetronome() {
   clearInterval(metroInterval); clearInterval(bpmTimer); clearTimeout(bpmTimer);
   stopBpmCountdown();
+  stopMinCounter();
   metroInterval = null; bpmTimer = null;
   ['metronomeBar','metronomeBarViewer'].forEach(id => {
     const bar = document.getElementById(id);
