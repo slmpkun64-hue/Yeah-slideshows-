@@ -142,7 +142,8 @@
   #bpmDisplay{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:#444;font-family:monospace;pointer-events:none;transition:color .3s}
   #bpmDisplay.changed{color:var(--accent)}
 
-  #fsExit{display:none;position:fixed;top:14px;right:14px;z-index:400;width:38px;height:38px;border-radius:50%;background:rgba(0,0,0,.6);border:1px solid #444;color:#fff;font-size:18px;align-items:center;justify-content:center;cursor:pointer}
+  #versionBadge{position:fixed;bottom:10px;right:12px;font-size:10px;color:var(--text3);font-family:monospace;pointer-events:none;z-index:1}
+  .bpm-next{display:block;font-size:9px;color:#333;font-family:monospace;text-align:right;padding-right:10px;pointer-events:none;transition:color .3s};width:38px;height:38px;border-radius:50%;background:rgba(0,0,0,.6);border:1px solid #444;color:#fff;font-size:18px;align-items:center;justify-content:center;cursor:pointer}
 
   @media (prefers-color-scheme:light){
     :root{--bg:#f5f5f5;--bg2:#fff;--bg3:#f0f0f0;--text:#111;--text2:#555;--text3:#999;--border:#e0e0e0}
@@ -154,6 +155,7 @@
 
 <!-- SETUP -->
 <div id="setup">
+  <div id="versionBadge"></div>
   <div class="logo">🖼️</div>
   <div class="app-name">DriveSlide</div>
   <div class="app-sub">Google Drive photo gallery &amp; slideshow</div>
@@ -242,6 +244,7 @@
   <div id="metronomeBar" style="display:none">
     <div id="metroMid"></div>
     <span id="bpmDisplay"></span>
+    <span id="bpmNext" class="bpm-next"></span>
   </div>
   <div class="ss-settings" id="ssSettings" style="display:none">
     <h3>Slideshow settings</h3>
@@ -318,6 +321,7 @@
   <div id="metronomeBarViewer" style="display:none;height:52px;background:#0a0a0a;overflow:hidden;border-top:1px solid #1e1e1e;flex-shrink:0;position:relative;width:100%">
     <div id="metroMidV" style="position:absolute;left:50%;top:0;width:2px;height:100%;background:#2a2a2a;transform:translateX(-50%);transition:background .08s,box-shadow .08s"></div>
     <span id="bpmDisplayV" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:#444;font-family:monospace;pointer-events:none;transition:color .3s"></span>
+    <span id="bpmNextV" class="bpm-next" style="position:absolute;right:10px;top:calc(50% + 12px);transform:translateY(-50%)"></span>
   </div>
 </div>
 
@@ -855,7 +859,36 @@ document.addEventListener('keydown', e => {
   }
 });
 
-/* ===== METRONOME ===== */
+// Version counter
+(function() {
+  const v = (parseInt(localStorage.getItem('ds_version') || '0') + 1);
+  localStorage.setItem('ds_version', v);
+  document.getElementById('versionBadge').textContent = 'v' + v;
+})();
+
+let bpmNextTimer = null, bpmNextAt = null;
+function startBpmCountdown(seconds) {
+  clearInterval(bpmNextTimer);
+  bpmNextAt = Date.now() + seconds * 1000;
+  function tick() {
+    const secs = Math.max(0, Math.round((bpmNextAt - Date.now()) / 1000));
+    const txt = secs > 0 ? 'next: ' + secs + 's' : '';
+    ['bpmNext','bpmNextV'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = txt;
+    });
+  }
+  tick();
+  bpmNextTimer = setInterval(tick, 1000);
+}
+function stopBpmCountdown() {
+  clearInterval(bpmNextTimer);
+  bpmNextTimer = null;
+  ['bpmNext','bpmNextV'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '';
+  });
+}
 let metroBpm = 120, metroInterval = null, bpmTimer = null, audioCtx = null;
 let metroMode = 'random'; // 'random' | 'constant'
 
@@ -981,16 +1014,19 @@ function startMetronome(inViewer = false) {
   if (metroMode === 'constant') {
     metroConstStartTime = Date.now();
     setMetroBpm(metroConstStartBpm);
+    startBpmCountdown(2);
     bpmTimer = setInterval(() => {
       const next = constantBpm();
       const stepped = metroBpm + metroConstStep;
       const target = Math.min(next, stepped);
-      if (target > metroBpm) setMetroBpm(target);
+      if (target > metroBpm) { setMetroBpm(target); startBpmCountdown(2); }
     }, 2000);
   } else {
     setMetroBpm(randomBpm());
+    startBpmCountdown(metroBpmInterval);
     bpmTimer = setTimeout(function cycle() {
       setMetroBpm(randomBpm());
+      startBpmCountdown(metroBpmInterval);
       bpmTimer = setTimeout(cycle, metroBpmInterval * 1000);
     }, metroBpmInterval * 1000);
   }
@@ -998,6 +1034,7 @@ function startMetronome(inViewer = false) {
 
 function stopMetronome() {
   clearInterval(metroInterval); clearInterval(bpmTimer); clearTimeout(bpmTimer);
+  stopBpmCountdown();
   metroInterval = null; bpmTimer = null;
   ['metronomeBar','metronomeBarViewer'].forEach(id => {
     const bar = document.getElementById(id);
