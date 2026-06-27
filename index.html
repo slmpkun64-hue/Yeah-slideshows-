@@ -91,6 +91,7 @@
   .ss-progress-bar{height:100%;background:var(--accent);transition:width linear}
   .ss-top{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(0,0,0,.8)}
   .ss-title{font-size:14px;font-weight:600}
+  .ss-title-wrap{display:flex;flex-direction:column;gap:2px}
   .ss-counter{font-size:12px;color:#888}
   .ss-settings{background:rgba(0,0,0,.9);border-radius:var(--radius);padding:16px;position:absolute;bottom:80px;right:16px;z-index:10;min-width:200px;border:1px solid #333}
   .ss-settings h3{font-size:13px;color:var(--text2);margin-bottom:12px}
@@ -172,11 +173,17 @@
     <div class="step">
       <div class="step-num">2</div>
       <div class="step-content">
-        <p>Create an <strong>OAuth 2.0 Client ID</strong> (Web application). Add this page's URL as an authorised JavaScript origin. Also create an <strong>API Key</strong> and restrict it to Drive &amp; Picker APIs.</p>
+        <p>Create an <strong>OAuth 2.0 Client ID</strong> (Web application). Add this page's URL as an <strong>Authorised JavaScript origin</strong> (e.g. <code>https://your-username.github.io</code>). Also create an <strong>API Key</strong> and restrict it to the Drive API.</p>
       </div>
     </div>
     <div class="step">
       <div class="step-num">3</div>
+      <div class="step-content">
+        <p>On the <strong>OAuth consent screen</strong>, add your Google account as a <strong>test user</strong>. Without this the login popup will fail.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
       <div class="step-content">
         <p>Paste your credentials below and click Connect.</p>
       </div>
@@ -222,7 +229,10 @@
 <!-- SLIDESHOW -->
 <div id="slideshow">
   <div class="ss-top">
-    <span class="ss-title" id="ssTitle">Slideshow</span>
+    <div class="ss-title-wrap">
+      <span class="ss-title" id="ssTitle">Slideshow</span>
+      <span id="eventIndicator" style="font-size:11px;color:var(--accent);opacity:0;transition:opacity .3s;font-family:monospace"></span>
+    </div>
     <span class="ss-counter" id="ssCounter"></span>
     <button onclick="closeSlideshow()" style="font-size:22px;color:#aaa;background:none;border:none;cursor:pointer">✕</button>
   </div>
@@ -273,6 +283,10 @@
       <span>Metronome</span>
       <button id="metroModeBtn" onclick="toggleMetroMode()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer">Random</button>
     </div>
+    <div class="ss-setting-row">
+      <span style="font-size:12px;color:#aaa">BPM on slide</span>
+      <div id="bpmOnSlideToggle" class="toggle" onclick="toggleMetroBpmOnSlide()"></div>
+    </div>
     <div class="ss-setting-row" id="metroRowInterval">
       <span style="font-size:12px;color:#aaa">BPM change every</span>
       <input type="range" min="5" max="120" value="37" id="metroBpmIntervalSlider" oninput="updateMetroBpmInterval(this.value)">
@@ -296,6 +310,11 @@
     <div class="ss-setting-row" style="margin-top:14px;border-top:1px solid #333;padding-top:12px">
       <span style="font-size:12px;color:#888">Seen: <span id="seenCount">0</span> / <span id="totalCount">0</span></span>
       <button onclick="resetSeenPhotos()" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer">↺ Reset</button>
+    </div>
+    <div class="ss-setting-row" style="margin-top:10px;border-top:1px solid #333;padding-top:10px">
+      <span style="font-size:12px;color:#aaa">Event chance</span>
+      <input type="range" min="0" max="100" value="10" id="eventChanceSlider" oninput="updateEventChance(this.value)">
+      <span id="eventChanceVal" style="min-width:36px;font-size:12px;color:var(--text2)">10%</span>
     </div>
   </div>
 </div>
@@ -358,6 +377,7 @@ const DEMO_PHOTOS = [
 
 function loadGAPI() {
   return new Promise(res => {
+    if (window.gapi) { gapi.load('client', () => res()); return; }
     const s = document.createElement('script');
     s.src = 'https://apis.google.com/js/api.js';
     s.onload = () => gapi.load('client', () => { res(); });
@@ -366,6 +386,7 @@ function loadGAPI() {
 }
 function loadGIS() {
   return new Promise(res => {
+    if (window.google && window.google.accounts) { res(); return; }
     const s = document.createElement('script');
     s.src = 'https://accounts.google.com/gsi/client';
     s.onload = res;
@@ -382,7 +403,12 @@ async function startAuth() {
   localStorage.setItem('ds_apiKey', apiKey);
   localStorage.setItem('ds_clientId', clientId);
   await Promise.all([loadGAPI(), loadGIS()]);
-  await gapi.client.init({ apiKey, discoveryDocs:['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'] });
+  try {
+    await gapi.client.init({ apiKey, discoveryDocs:['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'] });
+  } catch(e) {
+    // Already initialised — just update the API key
+    gapi.client.setApiKey(apiKey);
+  }
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: clientId, scope: CLIENT_SCOPES,
     callback: (resp) => {
@@ -681,6 +707,11 @@ function loadSSPhoto() {
   seenPhotos.add(idx);
   ssLastIndex = idx;
   saveSeenPhotos();
+  if (metroBpmOnSlide && metroMode === 'random') {
+    setMetroBpm(randomBpm());
+    startBpmCountdown(ssInterval / 1000);
+    tryFireEvent(); // trigger 1 (on-slide mode): fires on each image change
+  }
   const img = document.getElementById('ssImg');
   document.getElementById('ssFileName').textContent = f.name;
   updateSeenCounter();
@@ -704,6 +735,7 @@ function scheduleSS() {
   if (!ssPaused) ssTimer = setTimeout(ssNext, ssInterval);
 }
 function ssNext() {
+  if (window._ssNextOverride) window._ssNextOverride();
   ssIndex++;
   if (ssIndex >= ssOrder.length) {
     if (!ssLoop) { closeSlideshow(); return; }
@@ -753,7 +785,7 @@ function toggleSettings() {
 }
 function saveSettings() {
   localStorage.setItem('ds_settings', JSON.stringify({
-    ssInterval, ssTransition, ssShuffle, ssLoop, metroMode,
+    ssInterval, ssTransition, ssShuffle, ssLoop, metroMode, metroBpmOnSlide,
     metroBpmInterval, metroConstStep, metroConstStartBpm, metroRampDuration
   }));
 }
@@ -804,6 +836,10 @@ function loadSettings() {
       const mins = Math.round(metroRampDuration / 60000);
       document.getElementById('metroRampDurationSlider').value = mins;
       document.getElementById('metroRampDurationVal').textContent = mins + 'min';
+    }
+    if (s.metroBpmOnSlide) {
+      metroBpmOnSlide = true;
+      document.getElementById('bpmOnSlideToggle').classList.add('on');
     }
     updateMetroSettingsVisibility();
   } catch(e) {}
@@ -893,6 +929,7 @@ function stopBpmCountdown() {
 }
 let metroBpm = 120, metroInterval = null, bpmTimer = null, audioCtx = null;
 let metroMode = 'random'; // 'random' | 'constant'
+let metroBpmOnSlide = false; // change BPM on every image change
 
 let minCounterTimer = null;
 function startMinCounter() {
@@ -960,6 +997,11 @@ function updateMetroSettingsVisibility() {
   document.getElementById('metroRowStartBpm').style.display = isRandom ? 'none' : '';
 }
 
+function toggleMetroBpmOnSlide() {
+  metroBpmOnSlide = !metroBpmOnSlide;
+  document.getElementById('bpmOnSlideToggle').classList.toggle('on', metroBpmOnSlide);
+  saveSettings();
+}
 function toggleMetroMode() {
   metroMode = metroMode === 'random' ? 'constant' : 'random';
   const btn = document.getElementById('metroModeBtn');
@@ -973,12 +1015,14 @@ function toggleMetroMode() {
   }
 }
 
+let beepPitch = 880; // controlled by pitch shift event
+
 function scheduleBeep(whenCtxTime) {
   if (!audioCtx) return;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.connect(gain); gain.connect(audioCtx.destination);
-  osc.type = 'sine'; osc.frequency.value = 880;
+  osc.type = 'sine'; osc.frequency.value = beepPitch;
   gain.gain.setValueAtTime(0.25, whenCtxTime);
   gain.gain.exponentialRampToValueAtTime(0.001, whenCtxTime + 0.12);
   osc.start(whenCtxTime);
@@ -1011,22 +1055,15 @@ function spawnMetroCircle() {
 
   const c = document.createElement('div');
   c.className = 'metro-circle';
-  // Start off-screen left; use transform for GPU compositing
   c.style.cssText = 'will-change:transform;left:0;transform:translateX(0)';
   bar.appendChild(c);
 
-  // Schedule beep precisely via Web Audio clock
-  try {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const beepAt = audioCtx.currentTime + beatMs / 1000;
-    scheduleBeep(beepAt);
-    // Visual flash timed via setTimeout (display only, latency-tolerant)
-    setTimeout(() => {
-      c.classList.add('lit');
-      if (mid) { mid.classList.add('flash'); setTimeout(() => mid.classList.remove('flash'), 150); }
-      setTimeout(() => c.classList.remove('lit'), 200);
-    }, beatMs);
-  } catch(e) {}
+  // Visual flash at beat midpoint
+  setTimeout(() => {
+    c.classList.add('lit');
+    if (mid) { mid.classList.add('flash'); setTimeout(() => mid.classList.remove('flash'), 150); }
+    setTimeout(() => c.classList.remove('lit'), 200);
+  }, beatMs);
 
   const startWall = performance.now();
   function step(ts) {
@@ -1038,10 +1075,30 @@ function spawnMetroCircle() {
   requestAnimationFrame(step);
 }
 
+// Lookahead scheduler — schedules beeps ahead of time using the audio clock
+// so JS jank never causes gaps between beats.
+const LOOKAHEAD_MS  = 100; // how far ahead to schedule
+const SCHEDULER_MS  = 25;  // how often the scheduler runs
+let nextBeatTime    = 0;   // next beat time in audioCtx seconds
+let schedulerTimer  = null;
+
+function runScheduler() {
+  if (!audioCtx) return;
+  const lookAheadSec = LOOKAHEAD_MS / 1000;
+  while (nextBeatTime < audioCtx.currentTime + lookAheadSec) {
+    const beepFn = window._echoScheduleBeep || scheduleBeep;
+    beepFn(nextBeatTime);
+    const delayMs = Math.max(0, (nextBeatTime - audioCtx.currentTime) * 1000);
+    setTimeout(spawnMetroCircle, delayMs);
+    nextBeatTime += 60 / metroBpm;
+  }
+  schedulerTimer = setTimeout(runScheduler, SCHEDULER_MS);
+}
+
 function setMetroBpm(bpm) {
   metroBpm = bpm;
-  clearInterval(metroInterval);
-  metroInterval = setInterval(spawnMetroCircle, 60000 / metroBpm);
+  // nextBeatTime stays intact so there's no gap on BPM change;
+  // the scheduler picks up the new interval naturally.
   ['bpmDisplay','bpmDisplayV'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -1054,6 +1111,8 @@ function setMetroBpm(bpm) {
 
 function startMetronome(inViewer = false) {
   stopMetronome();
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
   if (!metroStartTime) metroStartTime = Date.now();
   updateMinBpmDisplay();
   if (inViewer) {
@@ -1063,9 +1122,20 @@ function startMetronome(inViewer = false) {
     document.getElementById('metronomeBarViewer').style.display = 'none';
     document.getElementById('metronomeBar').style.display = 'block';
   }
+  // Seed the first beat immediately
+  nextBeatTime = audioCtx.currentTime;
+  // Update BPM display without touching the scheduler
+  const initBpm = metroMode === 'constant' ? metroConstStartBpm : randomBpm();
+  metroBpm = initBpm;
+  ['bpmDisplay','bpmDisplayV'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = metroBpm + ' BPM';
+  });
+  updateMinBpmDisplay();
+  runScheduler();
+
   if (metroMode === 'constant') {
     metroConstStartTime = Date.now();
-    setMetroBpm(metroConstStartBpm);
     startBpmCountdown(2);
     bpmTimer = setInterval(() => {
       const next = constantBpm();
@@ -1073,21 +1143,358 @@ function startMetronome(inViewer = false) {
       const target = Math.min(next, stepped);
       if (target > metroBpm) { setMetroBpm(target); startBpmCountdown(2); }
     }, 2000);
+  } else if (metroBpmOnSlide) {
+    // BPM is driven by loadSSPhoto on each image change; no timer needed
+    stopBpmCountdown();
   } else {
-    setMetroBpm(randomBpm());
     startBpmCountdown(metroBpmInterval);
     bpmTimer = setTimeout(function cycle() {
       setMetroBpm(randomBpm());
       startBpmCountdown(metroBpmInterval);
+      tryFireEvent(); // trigger 1: BPM change
       bpmTimer = setTimeout(cycle, metroBpmInterval * 1000);
     }, metroBpmInterval * 1000);
   }
+  scheduleEventTimer(); // trigger 2: independent random timer
+}
+
+/* ===== RANDOM EVENT SYSTEM =====
+   Each event: { name: string, fn: function }
+   tryFireEvent() rolls a 10% chance and picks one at random.
+   Fires on two triggers:
+     1. Every BPM change (in random mode / on-slide mode)
+     2. Every 15–45 s on a separate timer (eventTimer)
+   Add new events to the EVENTS array below.
+*/
+// Helper: duration of one interval in ms, used by events that revert after one cycle
+function oneInterval() {
+  return metroMode === 'constant' ? 2000
+       : metroBpmOnSlide          ? ssInterval
+       : metroBpmInterval * 1000;
+}
+
+const EVENTS = [
+  // 1. BPM spike — temporary ±shift based on current BPM range
+  {
+    name: 'bpmSpike',
+    fn: () => {
+      const plusShift = metroBpm < 100 ? 40 : metroBpm < 150 ? 30 : 20;
+      const shift = Math.random() < 0.5 ? plusShift : -40;
+      const spikedBpm = Math.max(40, metroBpm + shift);
+      const originalBpm = metroBpm;
+      setMetroBpm(spikedBpm);
+      setTimeout(() => { if (metroBpm === spikedBpm) setMetroBpm(originalBpm); }, oneInterval());
+    }
+  },
+
+  // 2. Double time — BPM ×2 for one interval
+  {
+    name: 'doubleTime',
+    fn: () => {
+      const orig = metroBpm;
+      const doubled = Math.min(orig * 2, 400);
+      setMetroBpm(doubled);
+      setTimeout(() => { if (metroBpm === doubled) setMetroBpm(orig); }, oneInterval());
+    }
+  },
+
+  // 3. Half time — BPM ÷2 for one interval
+  {
+    name: 'halfTime',
+    fn: () => {
+      const orig = metroBpm;
+      const halved = Math.max(Math.round(orig / 2), 40);
+      setMetroBpm(halved);
+      setTimeout(() => { if (metroBpm === halved) setMetroBpm(orig); }, oneInterval());
+    }
+  },
+
+  // 4. Pitch shift — beep frequency jumps to 440 or 1760 Hz for one interval
+  {
+    name: 'pitchShift',
+    fn: () => {
+      const origPitch = beepPitch;
+      beepPitch = Math.random() < 0.5 ? 440 : 1760;
+      setTimeout(() => { if (beepPitch !== origPitch) beepPitch = origPitch; }, oneInterval());
+    }
+  },
+
+  // 5. Stutter — fires 4 rapid beeps in quick succession
+  {
+    name: 'stutter',
+    fn: () => {
+      if (!audioCtx) return;
+      const gap = 0.07; // seconds between stutter beeps
+      for (let i = 0; i < 4; i++) {
+        scheduleBeep(audioCtx.currentTime + i * gap);
+      }
+    }
+  },
+
+  // 6. Skip — instantly jumps to the next slide
+  {
+    name: 'skip',
+    fn: () => {
+      if (document.getElementById('slideshow').style.display !== 'none') ssNext();
+    }
+  },
+
+  // 7. Rewind — goes back 2–3 slides then resumes forward
+  {
+    name: 'rewind',
+    fn: () => {
+      if (document.getElementById('slideshow').style.display === 'none') return;
+      const steps = Math.random() < 0.5 ? 2 : 3;
+      for (let i = 0; i < steps; i++) ssPrev();
+    }
+  },
+
+  // 8. Speed burst — halves slide interval for next 3 slides then restores
+  {
+    name: 'speedBurst',
+    fn: () => {
+      if (document.getElementById('slideshow').style.display === 'none') return;
+      const origInterval = ssInterval;
+      let burstCount = 0;
+      ssInterval = Math.max(1000, Math.round(origInterval / 2));
+      const origNext = window._ssNextOverride;
+      window._ssNextOverride = function burstNext() {
+        burstCount++;
+        if (burstCount >= 3) {
+          ssInterval = origInterval;
+          window._ssNextOverride = origNext;
+        }
+      };
+    }
+  },
+
+  // 9. Freeze — pauses slideshow for 3–5 seconds mid-interval
+  {
+    name: 'freeze',
+    fn: () => {
+      if (document.getElementById('slideshow').style.display === 'none') return;
+      if (ssPaused) return;
+      const freezeDur = (3 + Math.random() * 2) * 1000;
+      ssTogglePause();
+      setTimeout(() => { if (ssPaused) ssTogglePause(); }, freezeDur);
+    }
+  },
+
+  // 10. Reverse stutter — 4 beeps with increasing gaps (winding down)
+  {
+    name: 'reverseStutter',
+    fn: () => {
+      if (!audioCtx) return;
+      let t = audioCtx.currentTime;
+      [0.05, 0.12, 0.22, 0.38].forEach(gap => { scheduleBeep(t); t += gap; });
+    }
+  },
+
+  // 11. Echo — a delayed ghost beep 180ms after each real beat for one interval
+  {
+    name: 'echo',
+    fn: () => {
+      if (!audioCtx) return;
+      const orig = metroBpm;
+      const echoDelay = 0.18; // seconds
+      const origBeep = window._echoOverride;
+      window._echoOverride = true;
+      // Patch scheduleBeep temporarily to also fire a quieter echo
+      const _origScheduleBeep = scheduleBeep;
+      window._echoScheduleBeep = function(when) {
+        _origScheduleBeep(when);
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'sine'; osc.frequency.value = beepPitch;
+        gain.gain.setValueAtTime(0.08, when + echoDelay);
+        gain.gain.exponentialRampToValueAtTime(0.001, when + echoDelay + 0.12);
+        osc.start(when + echoDelay); osc.stop(when + echoDelay + 0.12);
+      };
+      setTimeout(() => { window._echoScheduleBeep = null; }, oneInterval());
+    }
+  },
+
+  // 12. Chaos — re-randomizes BPM on every beat for one interval then reverts
+  {
+    name: 'chaos',
+    fn: () => {
+      const orig = metroBpm;
+      const end = Date.now() + oneInterval();
+      const chaosTimer = setInterval(() => {
+        if (Date.now() >= end) { clearInterval(chaosTimer); setMetroBpm(orig); return; }
+        setMetroBpm(Math.floor(Math.random() * (300 - 60 + 1)) + 60);
+      }, 60000 / metroBpm);
+    }
+  },
+
+  // 13. Silence — stops the metronome for 3–5 seconds then restarts it
+  {
+    name: 'silence',
+    fn: () => {
+      const inViewer = document.getElementById('metronomeBarViewer').style.display !== 'none';
+      const dur = (3 + Math.random() * 2) * 1000;
+      stopMetronome();
+      setTimeout(() => startMetronome(inViewer), dur);
+    }
+  },
+
+  // 14. Slow burn — 3× slide interval for the next 2 slides
+  {
+    name: 'slowBurn',
+    fn: () => {
+      if (document.getElementById('slideshow').style.display === 'none') return;
+      const orig = ssInterval;
+      ssInterval = orig * 3;
+      let count = 0;
+      const prevOverride = window._ssNextOverride;
+      window._ssNextOverride = function() {
+        if (prevOverride) prevOverride();
+        count++;
+        if (count >= 2) { ssInterval = orig; window._ssNextOverride = prevOverride; }
+      };
+    }
+  },
+
+  // 15. Loop — replays current photo 2–3 times before advancing
+  {
+    name: 'loop',
+    fn: () => {
+      if (document.getElementById('slideshow').style.display === 'none') return;
+      const repeats = Math.random() < 0.5 ? 2 : 3;
+      let count = 0;
+      const prevOverride = window._ssNextOverride;
+      window._ssNextOverride = function() {
+        count++;
+        if (count < repeats) {
+          // replay same photo — decrement ssIndex so ssNext re-increments to same
+          ssIndex = (ssIndex - 1 + ssOrder.length) % ssOrder.length;
+        } else {
+          window._ssNextOverride = prevOverride;
+          if (prevOverride) prevOverride();
+        }
+      };
+    }
+  },
+
+  // 16. Jump — skips 5–10 photos forward
+  {
+    name: 'jump',
+    fn: () => {
+      if (document.getElementById('slideshow').style.display === 'none') return;
+      const steps = 5 + Math.floor(Math.random() * 6);
+      ssIndex = (ssIndex + steps) % ssOrder.length;
+      loadSSPhoto(); scheduleSS();
+    }
+  },
+
+  // 17. Backstep — goes back 1 photo, waits full interval, then resumes
+  {
+    name: 'backstep',
+    fn: () => {
+      if (document.getElementById('slideshow').style.display === 'none') return;
+      ssPrev();
+    }
+  },
+
+  // 18. Sync burst — doubles BPM AND halves slide interval for one cycle
+  {
+    name: 'syncBurst',
+    fn: () => {
+      const origBpm = metroBpm;
+      const origInterval = ssInterval;
+      setMetroBpm(Math.min(origBpm * 2, 400));
+      if (document.getElementById('slideshow').style.display !== 'none') {
+        ssInterval = Math.max(1000, Math.round(origInterval / 2));
+      }
+      setTimeout(() => {
+        if (metroBpm !== origBpm) setMetroBpm(origBpm);
+        ssInterval = origInterval;
+      }, oneInterval());
+    }
+  },
+
+  // 19. Drift — increments BPM by 1 every second for ~10 seconds
+  {
+    name: 'drift',
+    fn: () => {
+      const orig = metroBpm;
+      let ticks = 0;
+      const driftTimer = setInterval(() => {
+        ticks++;
+        setMetroBpm(metroBpm + 1);
+        if (ticks >= 10) { clearInterval(driftTimer); }
+      }, 1000);
+    }
+  },
+
+  // 20. Drop — cuts BPM to 40 for one interval
+  {
+    name: 'drop',
+    fn: () => {
+      const orig = metroBpm;
+      setMetroBpm(40);
+      setTimeout(() => { if (metroBpm === 40) setMetroBpm(orig); }, oneInterval());
+    }
+  },
+
+  // 21. Climax — jumps BPM to 320 AND skips to next slide immediately
+  {
+    name: 'climax',
+    fn: () => {
+      const orig = metroBpm;
+      setMetroBpm(320);
+      if (document.getElementById('slideshow').style.display !== 'none') ssNext();
+      setTimeout(() => { if (metroBpm === 320) setMetroBpm(orig); }, oneInterval());
+    }
+  },
+];
+
+let eventTimer = null;
+
+let eventChance = 0.10; // probability 0–1, set via slider
+
+function tryFireEvent() {
+  if (!EVENTS.length) return;
+  if (Math.random() > eventChance) return;
+  const event = EVENTS[Math.floor(Math.random() * EVENTS.length)];
+  try {
+    event.fn();
+    const el = document.getElementById('eventIndicator');
+    if (el) {
+      el.textContent = '⚡ ' + event.name;
+      el.style.opacity = '1';
+      clearTimeout(el._hideTimer);
+      el._hideTimer = setTimeout(() => { el.style.opacity = '0'; }, 2000);
+    }
+  } catch(e) { console.error('Event error:', event.name, e); }
+}
+
+function updateEventChance(v) {
+  eventChance = v / 100;
+  document.getElementById('eventChanceVal').textContent = v + '%';
+}
+
+function scheduleEventTimer() {
+  clearTimeout(eventTimer);
+  const delay = (15 + Math.random() * 30) * 1000; // 15–45 s
+  eventTimer = setTimeout(() => {
+    tryFireEvent();
+    scheduleEventTimer(); // reschedule
+  }, delay);
+}
+
+function stopEventTimer() {
+  clearTimeout(eventTimer);
+  eventTimer = null;
 }
 
 function stopMetronome() {
-  clearInterval(metroInterval); clearInterval(bpmTimer); clearTimeout(bpmTimer);
+  clearTimeout(schedulerTimer); schedulerTimer = null;
+  clearInterval(bpmTimer); clearTimeout(bpmTimer);
   stopBpmCountdown();
   stopMinCounter();
+  stopEventTimer();
   metroInterval = null; bpmTimer = null;
   ['metronomeBar','metronomeBarViewer'].forEach(id => {
     const bar = document.getElementById(id);
