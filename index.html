@@ -1082,15 +1082,27 @@ const SCHEDULER_MS  = 25;  // how often the scheduler runs
 let nextBeatTime    = 0;   // next beat time in audioCtx seconds
 let schedulerTimer  = null;
 
+let metroTriplet = false; // when true, fires 3 beeps per beat
+
 function runScheduler() {
   if (!audioCtx) return;
   const lookAheadSec = LOOKAHEAD_MS / 1000;
   while (nextBeatTime < audioCtx.currentTime + lookAheadSec) {
     const beepFn = window._echoScheduleBeep || scheduleBeep;
-    beepFn(nextBeatTime);
-    const delayMs = Math.max(0, (nextBeatTime - audioCtx.currentTime) * 1000);
-    setTimeout(spawnMetroCircle, delayMs);
-    nextBeatTime += 60 / metroBpm;
+    const beatLen = 60 / metroBpm;
+    if (metroTriplet) {
+      // fire at beat, beat+⅓, beat+⅔
+      for (let t = 0; t < 3; t++) {
+        const when = nextBeatTime + t * (beatLen / 3);
+        beepFn(when);
+        setTimeout(spawnMetroCircle, Math.max(0, (when - audioCtx.currentTime) * 1000));
+      }
+    } else {
+      beepFn(nextBeatTime);
+      const delayMs = Math.max(0, (nextBeatTime - audioCtx.currentTime) * 1000);
+      setTimeout(spawnMetroCircle, delayMs);
+    }
+    nextBeatTime += beatLen;
   }
   schedulerTimer = setTimeout(runScheduler, SCHEDULER_MS);
 }
@@ -1174,9 +1186,9 @@ function oneInterval() {
 }
 
 const EVENTS = [
-  // 1. BPM spike — temporary ±shift based on current BPM range
+  // 1. BPM spike
   {
-    name: 'bpmSpike',
+    name: 'bpmSpike', duration: () => oneInterval(),
     fn: () => {
       const plusShift = metroBpm < 100 ? 40 : metroBpm < 150 ? 30 : 20;
       const shift = Math.random() < 0.5 ? plusShift : -40;
@@ -1187,9 +1199,9 @@ const EVENTS = [
     }
   },
 
-  // 2. Double time — BPM ×2 for one interval
+  // 2. Double time
   {
-    name: 'doubleTime',
+    name: 'doubleTime', duration: () => oneInterval(),
     fn: () => {
       const orig = metroBpm;
       const doubled = Math.min(orig * 2, 400);
@@ -1198,9 +1210,9 @@ const EVENTS = [
     }
   },
 
-  // 3. Half time — BPM ÷2 for one interval
+  // 3. Half time
   {
-    name: 'halfTime',
+    name: 'halfTime', duration: () => oneInterval(),
     fn: () => {
       const orig = metroBpm;
       const halved = Math.max(Math.round(orig / 2), 40);
@@ -1209,9 +1221,9 @@ const EVENTS = [
     }
   },
 
-  // 4. Pitch shift — beep frequency jumps to 440 or 1760 Hz for one interval
+  // 4. Pitch shift
   {
-    name: 'pitchShift',
+    name: 'pitchShift', duration: () => oneInterval(),
     fn: () => {
       const origPitch = beepPitch;
       beepPitch = Math.random() < 0.5 ? 440 : 1760;
@@ -1219,29 +1231,27 @@ const EVENTS = [
     }
   },
 
-  // 5. Stutter — fires 4 rapid beeps in quick succession
+  // 5. Stutter — instant
   {
-    name: 'stutter',
+    name: 'stutter', duration: null,
     fn: () => {
       if (!audioCtx) return;
-      const gap = 0.07; // seconds between stutter beeps
-      for (let i = 0; i < 4; i++) {
-        scheduleBeep(audioCtx.currentTime + i * gap);
-      }
+      const gap = 0.07;
+      for (let i = 0; i < 4; i++) scheduleBeep(audioCtx.currentTime + i * gap);
     }
   },
 
-  // 6. Skip — instantly jumps to the next slide
+  // 6. Skip — instant
   {
-    name: 'skip',
+    name: 'skip', duration: null,
     fn: () => {
       if (document.getElementById('slideshow').style.display !== 'none') ssNext();
     }
   },
 
-  // 7. Rewind — goes back 2–3 slides then resumes forward
+  // 7. Rewind — instant
   {
-    name: 'rewind',
+    name: 'rewind', duration: null,
     fn: () => {
       if (document.getElementById('slideshow').style.display === 'none') return;
       const steps = Math.random() < 0.5 ? 2 : 3;
@@ -1249,9 +1259,9 @@ const EVENTS = [
     }
   },
 
-  // 8. Speed burst — halves slide interval for next 3 slides then restores
+  // 8. Speed burst — 3 slides
   {
-    name: 'speedBurst',
+    name: 'speedBurst', duration: () => oneInterval() * 3,
     fn: () => {
       if (document.getElementById('slideshow').style.display === 'none') return;
       const origInterval = ssInterval;
@@ -1260,17 +1270,14 @@ const EVENTS = [
       const origNext = window._ssNextOverride;
       window._ssNextOverride = function burstNext() {
         burstCount++;
-        if (burstCount >= 3) {
-          ssInterval = origInterval;
-          window._ssNextOverride = origNext;
-        }
+        if (burstCount >= 3) { ssInterval = origInterval; window._ssNextOverride = origNext; }
       };
     }
   },
 
-  // 9. Freeze — pauses slideshow for 3–5 seconds mid-interval
+  // 9. Freeze — 3–5 seconds
   {
-    name: 'freeze',
+    name: 'freeze', duration: () => Math.round((3 + Math.random() * 2) * 1000),
     fn: () => {
       if (document.getElementById('slideshow').style.display === 'none') return;
       if (ssPaused) return;
@@ -1280,9 +1287,9 @@ const EVENTS = [
     }
   },
 
-  // 10. Reverse stutter — 4 beeps with increasing gaps (winding down)
+  // 10. Reverse stutter — instant
   {
-    name: 'reverseStutter',
+    name: 'reverseStutter', duration: null,
     fn: () => {
       if (!audioCtx) return;
       let t = audioCtx.currentTime;
@@ -1290,16 +1297,12 @@ const EVENTS = [
     }
   },
 
-  // 11. Echo — a delayed ghost beep 180ms after each real beat for one interval
+  // 11. Echo — one interval
   {
-    name: 'echo',
+    name: 'echo', duration: () => oneInterval(),
     fn: () => {
       if (!audioCtx) return;
-      const orig = metroBpm;
-      const echoDelay = 0.18; // seconds
-      const origBeep = window._echoOverride;
-      window._echoOverride = true;
-      // Patch scheduleBeep temporarily to also fire a quieter echo
+      const echoDelay = 0.18;
       const _origScheduleBeep = scheduleBeep;
       window._echoScheduleBeep = function(when) {
         _origScheduleBeep(when);
@@ -1315,9 +1318,9 @@ const EVENTS = [
     }
   },
 
-  // 12. Chaos — re-randomizes BPM on every beat for one interval then reverts
+  // 12. Chaos — one interval
   {
-    name: 'chaos',
+    name: 'chaos', duration: () => oneInterval(),
     fn: () => {
       const orig = metroBpm;
       const end = Date.now() + oneInterval();
@@ -1328,9 +1331,9 @@ const EVENTS = [
     }
   },
 
-  // 13. Silence — stops the metronome for 3–5 seconds then restarts it
+  // 13. Silence — 3–5 seconds
   {
-    name: 'silence',
+    name: 'silence', duration: () => Math.round((3 + Math.random() * 2) * 1000),
     fn: () => {
       const inViewer = document.getElementById('metronomeBarViewer').style.display !== 'none';
       const dur = (3 + Math.random() * 2) * 1000;
@@ -1339,13 +1342,13 @@ const EVENTS = [
     }
   },
 
-  // 14. Slow burn — 3× slide interval for the next 2 slides
+  // 14. Slow burn — 2 slides
   {
-    name: 'slowBurn',
+    name: 'slowBurn', duration: () => oneInterval() * 2 * 2,
     fn: () => {
       if (document.getElementById('slideshow').style.display === 'none') return;
       const orig = ssInterval;
-      ssInterval = orig * 3;
+      ssInterval = orig * 2;
       let count = 0;
       const prevOverride = window._ssNextOverride;
       window._ssNextOverride = function() {
@@ -1356,9 +1359,9 @@ const EVENTS = [
     }
   },
 
-  // 15. Loop — replays current photo 2–3 times before advancing
+  // 15. Loop — 2–3 repeats
   {
-    name: 'loop',
+    name: 'loop', duration: () => oneInterval() * 3,
     fn: () => {
       if (document.getElementById('slideshow').style.display === 'none') return;
       const repeats = Math.random() < 0.5 ? 2 : 3;
@@ -1367,7 +1370,6 @@ const EVENTS = [
       window._ssNextOverride = function() {
         count++;
         if (count < repeats) {
-          // replay same photo — decrement ssIndex so ssNext re-increments to same
           ssIndex = (ssIndex - 1 + ssOrder.length) % ssOrder.length;
         } else {
           window._ssNextOverride = prevOverride;
@@ -1377,9 +1379,9 @@ const EVENTS = [
     }
   },
 
-  // 16. Jump — skips 5–10 photos forward
+  // 16. Jump — instant
   {
-    name: 'jump',
+    name: 'jump', duration: null,
     fn: () => {
       if (document.getElementById('slideshow').style.display === 'none') return;
       const steps = 5 + Math.floor(Math.random() * 6);
@@ -1388,18 +1390,18 @@ const EVENTS = [
     }
   },
 
-  // 17. Backstep — goes back 1 photo, waits full interval, then resumes
+  // 17. Backstep — instant
   {
-    name: 'backstep',
+    name: 'backstep', duration: null,
     fn: () => {
       if (document.getElementById('slideshow').style.display === 'none') return;
       ssPrev();
     }
   },
 
-  // 18. Sync burst — doubles BPM AND halves slide interval for one cycle
+  // 18. Sync burst — one interval
   {
-    name: 'syncBurst',
+    name: 'syncBurst', duration: () => oneInterval(),
     fn: () => {
       const origBpm = metroBpm;
       const origInterval = ssInterval;
@@ -1414,23 +1416,22 @@ const EVENTS = [
     }
   },
 
-  // 19. Drift — increments BPM by 1 every second for ~10 seconds
+  // 19. Drift — 10 seconds
   {
-    name: 'drift',
+    name: 'drift', duration: () => 10000,
     fn: () => {
-      const orig = metroBpm;
       let ticks = 0;
       const driftTimer = setInterval(() => {
         ticks++;
         setMetroBpm(metroBpm + 1);
-        if (ticks >= 10) { clearInterval(driftTimer); }
+        if (ticks >= 10) clearInterval(driftTimer);
       }, 1000);
     }
   },
 
-  // 20. Drop — cuts BPM to 40 for one interval
+  // 20. Drop — one interval
   {
-    name: 'drop',
+    name: 'drop', duration: () => oneInterval(),
     fn: () => {
       const orig = metroBpm;
       setMetroBpm(40);
@@ -1438,9 +1439,9 @@ const EVENTS = [
     }
   },
 
-  // 21. Climax — jumps BPM to 320 AND skips to next slide immediately
+  // 21. Climax — one interval
   {
-    name: 'climax',
+    name: 'climax', duration: () => oneInterval(),
     fn: () => {
       const orig = metroBpm;
       setMetroBpm(320);
@@ -1448,24 +1449,59 @@ const EVENTS = [
       setTimeout(() => { if (metroBpm === 320) setMetroBpm(orig); }, oneInterval());
     }
   },
+
+  // 22. Triplet — 3 beeps per beat for one interval
+  {
+    name: 'triplet', duration: () => oneInterval(),
+    fn: () => {
+      metroTriplet = true;
+      setTimeout(() => { metroTriplet = false; }, oneInterval());
+    }
+  },
+
+  // 23. Breakdown — halves BPM and doubles slide interval simultaneously
+  {
+    name: 'breakdown', duration: () => oneInterval(),
+    fn: () => {
+      const origBpm = metroBpm;
+      const origInterval = ssInterval;
+      setMetroBpm(Math.max(40, Math.round(origBpm / 2)));
+      if (document.getElementById('slideshow').style.display !== 'none') {
+        ssInterval = origInterval * 2;
+      }
+      setTimeout(() => {
+        if (metroBpm !== origBpm) setMetroBpm(origBpm);
+        ssInterval = origInterval;
+      }, oneInterval());
+    }
+  },
 ];
 
 let eventTimer = null;
+let eventMisses = 0; // tracks consecutive non-fires for guarantee logic
 
 let eventChance = 0.10; // probability 0–1, set via slider
 
 function tryFireEvent() {
   if (!EVENTS.length) return;
-  if (Math.random() > eventChance) return;
+  // Guarantee threshold: ceil(1/chance) - 1 misses → next is forced
+  const threshold = eventChance > 0 ? Math.ceil(1 / eventChance) - 1 : Infinity;
+  const forced = eventMisses >= threshold;
+  if (!forced && Math.random() > eventChance) {
+    eventMisses++;
+    return;
+  }
+  eventMisses = 0;
   const event = EVENTS[Math.floor(Math.random() * EVENTS.length)];
   try {
     event.fn();
+    const dur = event.duration ? event.duration() : 2000;
     const el = document.getElementById('eventIndicator');
     if (el) {
       el.textContent = '⚡ ' + event.name;
       el.style.opacity = '1';
       clearTimeout(el._hideTimer);
-      el._hideTimer = setTimeout(() => { el.style.opacity = '0'; }, 2000);
+      el._hideTimer = setTimeout(() => { el.style.opacity = '0'; }, dur);
     }
   } catch(e) { console.error('Event error:', event.name, e); }
 }
