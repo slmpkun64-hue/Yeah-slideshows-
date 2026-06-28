@@ -549,6 +549,8 @@ function openViewer(idx) {
 }
 async function loadImageIntoEl(el, f, retry=true) {
   if (demoMode) { el.src = f.webContentLink; return; }
+  // Use preloaded blob URL if available
+  if (preloadCache.has(f.id)) { el.src = preloadCache.get(f.id); return; }
   const url = `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`;
   try {
     const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
@@ -564,7 +566,9 @@ async function loadImageIntoEl(el, f, retry=true) {
     }
     if (!resp.ok) return;
     const blob = await resp.blob();
-    el.src = URL.createObjectURL(blob);
+    const blobUrl = URL.createObjectURL(blob);
+    preloadCache.set(f.id, blobUrl);
+    el.src = blobUrl;
   } catch(e) {
     console.error('Image load error:', e);
   }
@@ -701,6 +705,28 @@ function resetSeenPhotos() {
   toggleSettings();
   startSlideshow(0);
 }
+/* ===== IMAGE PRELOAD CACHE ===== */
+const preloadCache = new Map(); // fileId → blob URL
+
+async function preloadFile(f) {
+  if (preloadCache.has(f.id)) return;
+  if (demoMode) { preloadCache.set(f.id, f.webContentLink); return; }
+  const url = `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`;
+  try {
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (!resp.ok) return;
+    const blob = await resp.blob();
+    preloadCache.set(f.id, URL.createObjectURL(blob));
+  } catch(e) {}
+}
+
+function preloadNextImages() {
+  for (let i = 1; i <= 5; i++) {
+    const idx = ssOrder[(ssIndex + i) % ssOrder.length];
+    if (idx !== undefined) preloadFile(photoFiles[idx]);
+  }
+}
+
 function loadSSPhoto() {
   const idx = ssOrder[ssIndex];
   const f = photoFiles[idx];
@@ -710,8 +736,8 @@ function loadSSPhoto() {
   if (metroBpmOnSlide && metroMode === 'random') {
     setMetroBpm(randomBpm());
     startBpmCountdown(ssInterval / 1000);
-    tryFireEvent(); // trigger 1 (on-slide mode): fires on each image change
   }
+  tryFireEvent(); // fire on every image change
   const img = document.getElementById('ssImg');
   document.getElementById('ssFileName').textContent = f.name;
   updateSeenCounter();
@@ -723,6 +749,7 @@ function loadSSPhoto() {
   } else {
     loadImageIntoEl(img, f);
   }
+  preloadNextImages();
   animateBar();
 }
 function animateBar() {
@@ -778,6 +805,8 @@ function closeSlideshow() {
   }
   document.getElementById('slideshow').style.display = 'none';
   stopMetronome();
+  preloadCache.forEach(url => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); });
+  preloadCache.clear();
 }
 function toggleSettings() {
   const s = document.getElementById('ssSettings');
@@ -1163,19 +1192,14 @@ function startMetronome(inViewer = false) {
     bpmTimer = setTimeout(function cycle() {
       setMetroBpm(randomBpm());
       startBpmCountdown(metroBpmInterval);
-      tryFireEvent(); // trigger 1: BPM change
       bpmTimer = setTimeout(cycle, metroBpmInterval * 1000);
     }, metroBpmInterval * 1000);
   }
-  scheduleEventTimer(); // trigger 2: independent random timer
 }
 
 /* ===== RANDOM EVENT SYSTEM =====
-   Each event: { name: string, fn: function }
-   tryFireEvent() rolls a 10% chance and picks one at random.
-   Fires on two triggers:
-     1. Every BPM change (in random mode / on-slide mode)
-     2. Every 15–45 s on a separate timer (eventTimer)
+   Each event: { name: string, duration: fn, fn: function }
+   tryFireEvent() fires on every image change only.
    Add new events to the EVENTS array below.
 */
 // Helper: duration of one interval in ms, used by events that revert after one cycle
@@ -1318,20 +1342,7 @@ const EVENTS = [
     }
   },
 
-  // 12. Chaos — one interval
-  {
-    name: 'chaos', duration: () => oneInterval(),
-    fn: () => {
-      const orig = metroBpm;
-      const end = Date.now() + oneInterval();
-      const chaosTimer = setInterval(() => {
-        if (Date.now() >= end) { clearInterval(chaosTimer); setMetroBpm(orig); return; }
-        setMetroBpm(Math.floor(Math.random() * (300 - 60 + 1)) + 60);
-      }, 60000 / metroBpm);
-    }
-  },
-
-  // 13. Silence — 3–5 seconds
+  // 12. Silence — 3–5 seconds
   {
     name: 'silence', duration: () => Math.round((3 + Math.random() * 2) * 1000),
     fn: () => {
