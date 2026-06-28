@@ -1255,35 +1255,28 @@ const EVENTS = [
     }
   },
 
-  // 5. Stutter — instant
-  {
-    name: 'stutter', duration: null,
-    fn: () => {
-      if (!audioCtx) return;
-      const gap = 0.07;
-      for (let i = 0; i < 4; i++) scheduleBeep(audioCtx.currentTime + i * gap);
-    }
-  },
-
-  // 6. Skip — instant
+  // 5. Skip — moves to next photo without double-advancing
   {
     name: 'skip', duration: null,
     fn: () => {
-      if (document.getElementById('slideshow').style.display !== 'none') ssNext();
+      if (document.getElementById('slideshow').style.display === 'none') return;
+      ssIndex = (ssIndex + 1) % ssOrder.length;
+      loadSSPhoto(); scheduleSS();
     }
   },
 
-  // 7. Rewind — instant
+  // 6. Rewind — goes back 2–3 photos
   {
     name: 'rewind', duration: null,
     fn: () => {
       if (document.getElementById('slideshow').style.display === 'none') return;
       const steps = Math.random() < 0.5 ? 2 : 3;
-      for (let i = 0; i < steps; i++) ssPrev();
+      ssIndex = (ssIndex - steps + ssOrder.length) % ssOrder.length;
+      loadSSPhoto(); scheduleSS();
     }
   },
 
-  // 8. Speed burst — 3 slides
+  // 7. Speed burst — 3 slides
   {
     name: 'speedBurst', duration: () => oneInterval() * 3,
     fn: () => {
@@ -1299,7 +1292,7 @@ const EVENTS = [
     }
   },
 
-  // 9. Freeze — 3–5 seconds
+  // 8. Freeze — 3–5 seconds
   {
     name: 'freeze', duration: () => Math.round((3 + Math.random() * 2) * 1000),
     fn: () => {
@@ -1311,17 +1304,7 @@ const EVENTS = [
     }
   },
 
-  // 10. Reverse stutter — instant
-  {
-    name: 'reverseStutter', duration: null,
-    fn: () => {
-      if (!audioCtx) return;
-      let t = audioCtx.currentTime;
-      [0.05, 0.12, 0.22, 0.38].forEach(gap => { scheduleBeep(t); t += gap; });
-    }
-  },
-
-  // 11. Echo — one interval
+  // 9. Echo — one interval
   {
     name: 'echo', duration: () => oneInterval(),
     fn: () => {
@@ -1344,10 +1327,10 @@ const EVENTS = [
 
   // 12. Silence — 3–5 seconds
   {
-    name: 'silence', duration: () => Math.round((3 + Math.random() * 2) * 1000),
+    name: 'silence', duration: () => oneInterval(),
     fn: () => {
       const inViewer = document.getElementById('metronomeBarViewer').style.display !== 'none';
-      const dur = (3 + Math.random() * 2) * 1000;
+      const dur = oneInterval();
       stopMetronome();
       setTimeout(() => startMetronome(inViewer), dur);
     }
@@ -1401,12 +1384,13 @@ const EVENTS = [
     }
   },
 
-  // 17. Backstep — instant
+  // 16. Backstep — goes back 1 photo
   {
     name: 'backstep', duration: null,
     fn: () => {
       if (document.getElementById('slideshow').style.display === 'none') return;
-      ssPrev();
+      ssIndex = (ssIndex - 1 + ssOrder.length) % ssOrder.length;
+      loadSSPhoto(); scheduleSS();
     }
   },
 
@@ -1454,9 +1438,13 @@ const EVENTS = [
   {
     name: 'climax', duration: () => oneInterval(),
     fn: () => {
+      if (document.getElementById('slideshow').style.display !== 'none') {
+        ssIndex = (ssIndex + 1) % ssOrder.length;
+        loadSSPhoto(); scheduleSS();
+      }
+      // Set BPM after loadSSPhoto so on-slide mode doesn't overwrite it
       const orig = metroBpm;
       setMetroBpm(320);
-      if (document.getElementById('slideshow').style.display !== 'none') ssNext();
       setTimeout(() => { if (metroBpm === 320) setMetroBpm(orig); }, oneInterval());
     }
   },
@@ -1493,8 +1481,10 @@ let eventMisses = 0; // tracks consecutive non-fires for guarantee logic
 
 let eventChance = 0.10; // probability 0–1, set via slider
 
+let eventFiring = false; // guard against cascaded tryFireEvent calls from loadSSPhoto
+
 function tryFireEvent() {
-  if (!EVENTS.length) return;
+  if (!EVENTS.length || eventFiring) return;
   // Guarantee threshold: ceil(1/chance) - 1 misses → next is forced
   const threshold = eventChance > 0 ? Math.ceil(1 / eventChance) - 1 : Infinity;
   const forced = eventMisses >= threshold;
@@ -1504,6 +1494,7 @@ function tryFireEvent() {
   }
   eventMisses = 0;
   const event = EVENTS[Math.floor(Math.random() * EVENTS.length)];
+  eventFiring = true;
   try {
     event.fn();
     const dur = event.duration ? event.duration() : 2000;
@@ -1515,6 +1506,7 @@ function tryFireEvent() {
       el._hideTimer = setTimeout(() => { el.style.opacity = '0'; }, dur);
     }
   } catch(e) { console.error('Event error:', event.name, e); }
+  eventFiring = false;
 }
 
 function updateEventChance(v) {
