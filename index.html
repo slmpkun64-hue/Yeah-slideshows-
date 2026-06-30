@@ -1002,10 +1002,16 @@ let metroConstStep = 1;                 // BPM added per tick in constant mode
 const METRO_MIN_START = 60, METRO_MAX_START = 120;
 const METRO_MIN_END = 200,  METRO_MAX_END = 300;
 
+function getCurrentMinBpm() {
+  const elapsed = metroStartTime ? Math.min(Date.now() - metroStartTime, metroRampDuration) : 0;
+  const t = elapsed / metroRampDuration;
+  return Math.round(METRO_MIN_START + t * (METRO_MIN_END - METRO_MIN_START));
+}
+
 function randomBpm() {
   const elapsed = metroStartTime ? Math.min(Date.now() - metroStartTime, metroRampDuration) : 0;
   const t = elapsed / metroRampDuration;
-  const minBpm = Math.round(METRO_MIN_START + t * (METRO_MIN_END - METRO_MIN_START));
+  const minBpm = getCurrentMinBpm();
   const maxBpm = Math.round(METRO_MAX_START + t * (METRO_MAX_END - METRO_MAX_START));
   return Math.floor(Math.random() * (maxBpm - minBpm + 1)) + minBpm;
 }
@@ -1479,16 +1485,24 @@ const EVENTS = [
 let eventTimer = null;
 let eventMisses = 0; // tracks consecutive non-fires for guarantee logic
 
-let eventChance = 0.10; // probability 0–1, set via slider
+let eventChance = 0.10; // base probability 0–1, set via slider
 
 let eventFiring = false; // guard against cascaded tryFireEvent calls from loadSSPhoto
 
+function getEffectiveEventChance() {
+  // +1.2% for every 10 BPM of the current min BPM (random mode) or current BPM (constant mode)
+  const basis = metroMode === 'random' ? getCurrentMinBpm() : metroBpm;
+  const bonus = Math.floor(basis / 10) * 0.012;
+  return eventChance + bonus; // uncapped
+}
+
 function tryFireEvent() {
   if (!EVENTS.length || eventFiring) return;
+  const effectiveChance = getEffectiveEventChance();
   // Guarantee threshold: ceil(1/chance) - 1 misses → next is forced
-  const threshold = eventChance > 0 ? Math.ceil(1 / eventChance) - 1 : Infinity;
+  const threshold = effectiveChance > 0 ? Math.ceil(1 / effectiveChance) - 1 : Infinity;
   const forced = eventMisses >= threshold;
-  if (!forced && Math.random() > eventChance) {
+  if (!forced && Math.random() > effectiveChance) {
     eventMisses++;
     return;
   }
