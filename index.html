@@ -6,6 +6,10 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0e0e0e">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
 <title>DriveSlide</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
@@ -316,6 +320,10 @@
       <input type="range" min="0" max="100" value="10" id="eventChanceSlider" oninput="updateEventChance(this.value)">
       <span id="eventChanceVal" style="min-width:36px;font-size:12px;color:var(--text2)">10%</span>
     </div>
+    <div class="ss-setting-row" style="margin-top:8px;flex-direction:column;align-items:flex-start;gap:6px">
+      <span style="font-size:12px;color:#aaa">Events</span>
+      <div id="eventTogglesList" style="display:flex;flex-wrap:wrap;gap:6px 14px"></div>
+    </div>
   </div>
 </div>
 
@@ -359,6 +367,27 @@ let seenPhotos = new Set();
 let viewerIdx = 0;
 let demoMode = false;
 let ssSlideshowIsFullscreen = false;
+
+let wakeLock = null;
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    }
+  } catch(e) { /* not available, or permission denied — safe to ignore */ }
+}
+function releaseWakeLock() {
+  if (wakeLock) { wakeLock.release().catch(()=>{}); wakeLock = null; }
+}
+// Wake locks are auto-released when the tab is hidden; re-acquire on return if still in use
+document.addEventListener('visibilitychange', () => {
+  if (wakeLock === null && document.visibilityState === 'visible') {
+    const inSS = document.getElementById('slideshow').style.display !== 'none';
+    const inViewer = document.getElementById('viewer').style.display !== 'none';
+    if (inSS || inViewer) requestWakeLock();
+  }
+});
 
 const DEMO_PHOTOS = [
   {id:'d1',name:'Sunset over the hills.jpg',thumbnailLink:'https://picsum.photos/seed/sunset/800/600',webContentLink:'https://picsum.photos/seed/sunset/1600/1200'},
@@ -546,11 +575,12 @@ function openViewer(idx) {
   document.getElementById('viewer').style.display = 'flex';
   renderViewer();
   startMetronome(true);
+  requestWakeLock();
 }
 async function loadImageIntoEl(el, f, retry=true) {
-  if (demoMode) { el.src = f.webContentLink; return; }
+  if (demoMode) { el.src = f.webContentLink; return true; }
   // Use preloaded blob URL if available
-  if (preloadCache.has(f.id)) { el.src = preloadCache.get(f.id); return; }
+  if (preloadCache.has(f.id)) { el.src = preloadCache.get(f.id); return true; }
   const url = `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`;
   try {
     const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
@@ -564,20 +594,24 @@ async function loadImageIntoEl(el, f, retry=true) {
       });
       return loadImageIntoEl(el, f, false);
     }
-    if (!resp.ok) return;
+    if (!resp.ok) { console.error('Image load failed:', resp.status, f.name); return false; }
     const blob = await resp.blob();
     const blobUrl = URL.createObjectURL(blob);
-    preloadCache.set(f.id, blobUrl);
+    cacheBlobUrl(f.id, blobUrl);
     el.src = blobUrl;
+    return true;
   } catch(e) {
     console.error('Image load error:', e);
+    return false;
   }
 }
 function renderViewer() {
   const f = photoFiles[viewerIdx];
   document.getElementById('vName').textContent = f.name;
   document.getElementById('vCounter').textContent = `${viewerIdx+1} / ${photoFiles.length}`;
-  loadImageIntoEl(document.getElementById('vImg'), f);
+  loadImageIntoEl(document.getElementById('vImg'), f).then(ok => {
+    if (!ok) document.getElementById('vName').textContent = f.name + ' (failed to load)';
+  });
 }
 function viewerPrev() { viewerIdx = (viewerIdx-1+photoFiles.length)%photoFiles.length; renderViewer(); }
 function viewerNext() { viewerIdx = (viewerIdx+1)%photoFiles.length; renderViewer(); }
@@ -596,6 +630,7 @@ function closeViewer() {
   if (document.getElementById('vTopBar').style.display === 'none') toggleViewerFullscreen();
   document.getElementById('viewer').style.display = 'none';
   stopMetronome();
+  releaseWakeLock();
 }
 function viewerSlideshow() { closeViewer(); startSlideshow(viewerIdx); }
 
@@ -667,7 +702,12 @@ function buildSSOrder(startIdx=0) {
 function startSlideshow(startIdx=null) {
   if (!photoFiles.length) return;
   const resumeFrom = startIdx !== null ? startIdx : (ssLastIndex !== null ? ssLastIndex : 0);
-  const order = buildSSOrder(resumeFrom);
+  let order = buildSSOrder(resumeFrom);
+  if (order === null && ssLoop) {
+    seenPhotos.clear();
+    saveSeenPhotos();
+    order = buildSSOrder(0);
+  }
   if (order === null) {
     showAllSeenPrompt();
     return;
@@ -681,6 +721,7 @@ function startSlideshow(startIdx=null) {
   loadSSPhoto();
   scheduleSS();
   startMetronome();
+  requestWakeLock();
 }
 
 function showAllSeenPrompt() {
@@ -707,16 +748,37 @@ function resetSeenPhotos() {
 }
 /* ===== IMAGE PRELOAD CACHE ===== */
 const preloadCache = new Map(); // fileId → blob URL
+const PRELOAD_CACHE_MAX = 40;   // cap so long sessions don't leak blob URLs forever
 
-async function preloadFile(f) {
+function cacheBlobUrl(id, url) {
+  preloadCache.set(id, url);
+  while (preloadCache.size > PRELOAD_CACHE_MAX) {
+    const oldestId = preloadCache.keys().next().value;
+    const oldestUrl = preloadCache.get(oldestId);
+    preloadCache.delete(oldestId);
+    if (oldestUrl && oldestUrl.startsWith('blob:')) URL.revokeObjectURL(oldestUrl);
+  }
+}
+
+async function preloadFile(f, retry=true) {
   if (preloadCache.has(f.id)) return;
-  if (demoMode) { preloadCache.set(f.id, f.webContentLink); return; }
+  if (demoMode) { cacheBlobUrl(f.id, f.webContentLink); return; }
   const url = `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`;
   try {
     const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (resp.status === 401 && retry && tokenClient) {
+      await new Promise(res => {
+        tokenClient.requestAccessToken({ prompt: '' });
+        const check = setInterval(() => {
+          if (accessToken) { clearInterval(check); res(); }
+        }, 200);
+        setTimeout(() => { clearInterval(check); res(); }, 5000);
+      });
+      return preloadFile(f, false);
+    }
     if (!resp.ok) return;
     const blob = await resp.blob();
-    preloadCache.set(f.id, URL.createObjectURL(blob));
+    cacheBlobUrl(f.id, URL.createObjectURL(blob));
   } catch(e) {}
 }
 
@@ -725,6 +787,28 @@ function preloadNextImages() {
     const idx = ssOrder[(ssIndex + i) % ssOrder.length];
     if (idx !== undefined) preloadFile(photoFiles[idx]);
   }
+}
+
+let ssLoadFailures = 0; // consecutive failed loads, guards against a runaway skip loop
+function handleSSLoadFailure() {
+  ssLoadFailures++;
+  const el = document.getElementById('eventIndicator');
+  if (ssLoadFailures >= 4) {
+    // Stop auto-skipping — likely offline or all remaining photos are unavailable
+    if (el) { el.textContent = '⚠ Photo failed to load — check your connection'; el.style.opacity = '1'; }
+    return;
+  }
+  if (el) {
+    el.textContent = '⚠ Skipping unavailable photo';
+    el.style.opacity = '1';
+    clearTimeout(el._hideTimer);
+    el._hideTimer = setTimeout(() => { el.style.opacity = '0'; }, 2000);
+  }
+  setTimeout(() => {
+    if (document.getElementById('slideshow').style.display === 'none') return;
+    ssIndex = (ssIndex + 1) % ssOrder.length;
+    loadSSPhoto(); scheduleSS();
+  }, 1200);
 }
 
 function loadSSPhoto() {
@@ -741,13 +825,14 @@ function loadSSPhoto() {
   const img = document.getElementById('ssImg');
   document.getElementById('ssFileName').textContent = f.name;
   updateSeenCounter();
+  const handleResult = (ok) => { if (ok) ssLoadFailures = 0; else handleSSLoadFailure(); };
   if (ssTransition === 'fade') {
     img.classList.add('fade');
     setTimeout(() => {
-      loadImageIntoEl(img, f).then(() => img.classList.remove('fade'));
+      loadImageIntoEl(img, f).then(ok => { img.classList.remove('fade'); handleResult(ok); });
     }, 250);
   } else {
-    loadImageIntoEl(img, f);
+    loadImageIntoEl(img, f).then(handleResult);
   }
   preloadNextImages();
   animateBar();
@@ -766,7 +851,13 @@ function ssNext() {
   ssIndex++;
   if (ssIndex >= ssOrder.length) {
     if (!ssLoop) { closeSlideshow(); return; }
-    const order = buildSSOrder(ssLastIndex !== null ? (ssLastIndex + 1) % photoFiles.length : 0);
+    let order = buildSSOrder(ssLastIndex !== null ? (ssLastIndex + 1) % photoFiles.length : 0);
+    if (order === null) {
+      // All photos have been seen — since loop is on, reset the seen set and start over
+      seenPhotos.clear();
+      saveSeenPhotos();
+      order = buildSSOrder(0);
+    }
     if (order === null) { showAllSeenPrompt(); return; }
     ssOrder = order;
     ssIndex = 0;
@@ -805,6 +896,7 @@ function closeSlideshow() {
   }
   document.getElementById('slideshow').style.display = 'none';
   stopMetronome();
+  releaseWakeLock();
   preloadCache.forEach(url => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); });
   preloadCache.clear();
 }
@@ -815,7 +907,8 @@ function toggleSettings() {
 function saveSettings() {
   localStorage.setItem('ds_settings', JSON.stringify({
     ssInterval, ssTransition, ssShuffle, ssLoop, metroMode, metroBpmOnSlide,
-    metroBpmInterval, metroConstStep, metroConstStartBpm, metroRampDuration
+    metroBpmInterval, metroConstStep, metroConstStartBpm, metroRampDuration,
+    disabledEvents: EVENTS.map(e => e.name).filter(n => !enabledEvents.has(n))
   }));
 }
 function loadSettings() {
@@ -870,8 +963,14 @@ function loadSettings() {
       metroBpmOnSlide = true;
       document.getElementById('bpmOnSlideToggle').classList.add('on');
     }
+    if (Array.isArray(s.disabledEvents)) {
+      s.disabledEvents.forEach(name => enabledEvents.delete(name));
+    }
     updateMetroSettingsVisibility();
-  } catch(e) {}
+  } catch(e) {
+  } finally {
+    renderEventToggles();
+  }
 }
 function updateInterval(v) { ssInterval = v*1000; document.getElementById('intervalVal').textContent = v+'s'; scheduleSS(); saveSettings(); }
 function updateTransition(v) { ssTransition = v; saveSettings(); }
@@ -1118,6 +1217,7 @@ let nextBeatTime    = 0;   // next beat time in audioCtx seconds
 let schedulerTimer  = null;
 
 let metroTriplet = false; // when true, fires 3 beeps per beat
+let metroTripletDepth = 0; // number of concurrently active triplet events keeping it on
 
 function runScheduler() {
   if (!audioCtx) return;
@@ -1208,12 +1308,22 @@ function startMetronome(inViewer = false) {
    tryFireEvent() fires on every image change only.
    Add new events to the EVENTS array below.
 */
-// Helper: duration of one interval in ms, used by events that revert after one cycle
+// Helper: duration of one interval in ms, used by events that revert after one cycle.
+// In constant mode this is randomized per event firing (5-20s) but cached so every
+// call within that same firing agrees (badge duration + fn()'s own revert timers).
+let _constantEventDurationMs = null;
 function oneInterval() {
-  return metroMode === 'constant' ? 2000
-       : metroBpmOnSlide          ? ssInterval
-       : metroBpmInterval * 1000;
+  if (metroMode === 'constant') {
+    if (_constantEventDurationMs == null) {
+      _constantEventDurationMs = Math.round(5000 + Math.random() * 15000);
+    }
+    return _constantEventDurationMs;
+  }
+  return metroBpmOnSlide ? ssInterval : metroBpmInterval * 1000;
 }
+
+let _silenceToken = 0;
+let _echoToken = 0;
 
 const EVENTS = [
   // 1. BPM spike
@@ -1256,8 +1366,9 @@ const EVENTS = [
     name: 'pitchShift', duration: () => oneInterval(),
     fn: () => {
       const origPitch = beepPitch;
-      beepPitch = Math.random() < 0.5 ? 440 : 1760;
-      setTimeout(() => { if (beepPitch !== origPitch) beepPitch = origPitch; }, oneInterval());
+      const newPitch = Math.random() < 0.5 ? 440 : 1760;
+      beepPitch = newPitch;
+      setTimeout(() => { if (beepPitch === newPitch) beepPitch = origPitch; }, oneInterval());
     }
   },
 
@@ -1288,13 +1399,19 @@ const EVENTS = [
     fn: () => {
       if (document.getElementById('slideshow').style.display === 'none') return;
       const origInterval = ssInterval;
+      const burstInterval = Math.max(1000, Math.round(origInterval / 2));
       let burstCount = 0;
-      ssInterval = Math.max(1000, Math.round(origInterval / 2));
+      ssInterval = burstInterval;
       const origNext = window._ssNextOverride;
-      window._ssNextOverride = function burstNext() {
+      const wrapper = function burstNext() {
+        if (origNext) origNext();
         burstCount++;
-        if (burstCount >= 3) { ssInterval = origInterval; window._ssNextOverride = origNext; }
+        if (burstCount >= 3) {
+          if (ssInterval === burstInterval) ssInterval = origInterval;
+          if (window._ssNextOverride === wrapper) window._ssNextOverride = origNext;
+        }
       };
+      window._ssNextOverride = wrapper;
     }
   },
 
@@ -1316,6 +1433,7 @@ const EVENTS = [
     fn: () => {
       if (!audioCtx) return;
       const echoDelay = 0.18;
+      const myToken = ++_echoToken;
       const _origScheduleBeep = scheduleBeep;
       window._echoScheduleBeep = function(when) {
         _origScheduleBeep(when);
@@ -1327,7 +1445,7 @@ const EVENTS = [
         gain.gain.exponentialRampToValueAtTime(0.001, when + echoDelay + 0.12);
         osc.start(when + echoDelay); osc.stop(when + echoDelay + 0.12);
       };
-      setTimeout(() => { window._echoScheduleBeep = null; }, oneInterval());
+      setTimeout(() => { if (_echoToken === myToken) window._echoScheduleBeep = null; }, oneInterval());
     }
   },
 
@@ -1337,8 +1455,9 @@ const EVENTS = [
     fn: () => {
       const inViewer = document.getElementById('metronomeBarViewer').style.display !== 'none';
       const dur = oneInterval();
+      const myToken = ++_silenceToken;
       stopMetronome();
-      setTimeout(() => startMetronome(inViewer), dur);
+      setTimeout(() => { if (_silenceToken === myToken) startMetronome(inViewer); }, dur);
     }
   },
 
@@ -1348,14 +1467,19 @@ const EVENTS = [
     fn: () => {
       if (document.getElementById('slideshow').style.display === 'none') return;
       const orig = ssInterval;
-      ssInterval = orig * 2;
+      const slowInterval = orig * 2;
+      ssInterval = slowInterval;
       let count = 0;
       const prevOverride = window._ssNextOverride;
-      window._ssNextOverride = function() {
+      const wrapper = function() {
         if (prevOverride) prevOverride();
         count++;
-        if (count >= 2) { ssInterval = orig; window._ssNextOverride = prevOverride; }
+        if (count >= 2) {
+          if (ssInterval === slowInterval) ssInterval = orig;
+          if (window._ssNextOverride === wrapper) window._ssNextOverride = prevOverride;
+        }
       };
+      window._ssNextOverride = wrapper;
     }
   },
 
@@ -1365,17 +1489,22 @@ const EVENTS = [
     fn: () => {
       if (document.getElementById('slideshow').style.display === 'none') return;
       const repeats = Math.random() < 0.5 ? 2 : 3;
+      const loopIdx = ssOrder[ssIndex]; // the photo being looped
       let count = 0;
       const prevOverride = window._ssNextOverride;
-      window._ssNextOverride = function() {
+      const wrapper = function() {
         count++;
         if (count < repeats) {
           ssIndex = (ssIndex - 1 + ssOrder.length) % ssOrder.length;
+          // keep it from being permanently seen until the loop finishes
+          seenPhotos.delete(loopIdx);
         } else {
-          window._ssNextOverride = prevOverride;
+          seenPhotos.add(loopIdx); // mark seen for real now
+          if (window._ssNextOverride === wrapper) window._ssNextOverride = prevOverride;
           if (prevOverride) prevOverride();
         }
       };
+      window._ssNextOverride = wrapper;
     }
   },
 
@@ -1406,13 +1535,14 @@ const EVENTS = [
     fn: () => {
       const origBpm = metroBpm;
       const origInterval = ssInterval;
-      setMetroBpm(Math.min(origBpm * 2, 400));
-      if (document.getElementById('slideshow').style.display !== 'none') {
-        ssInterval = Math.max(1000, Math.round(origInterval / 2));
-      }
+      const syncedBpm = Math.min(origBpm * 2, 400);
+      setMetroBpm(syncedBpm);
+      const inSS = document.getElementById('slideshow').style.display !== 'none';
+      const syncedInterval = Math.max(1000, Math.round(origInterval / 2));
+      if (inSS) ssInterval = syncedInterval;
       setTimeout(() => {
-        if (metroBpm !== origBpm) setMetroBpm(origBpm);
-        ssInterval = origInterval;
+        if (metroBpm === syncedBpm) setMetroBpm(origBpm);
+        if (ssInterval === syncedInterval) ssInterval = origInterval;
       }, oneInterval());
     }
   },
@@ -1459,8 +1589,12 @@ const EVENTS = [
   {
     name: 'triplet', duration: () => oneInterval(),
     fn: () => {
+      metroTripletDepth++;
       metroTriplet = true;
-      setTimeout(() => { metroTriplet = false; }, oneInterval());
+      setTimeout(() => {
+        metroTripletDepth = Math.max(0, metroTripletDepth - 1);
+        if (metroTripletDepth === 0) metroTriplet = false;
+      }, oneInterval());
     }
   },
 
@@ -1470,13 +1604,14 @@ const EVENTS = [
     fn: () => {
       const origBpm = metroBpm;
       const origInterval = ssInterval;
-      setMetroBpm(Math.max(40, Math.round(origBpm / 2)));
-      if (document.getElementById('slideshow').style.display !== 'none') {
-        ssInterval = origInterval * 2;
-      }
+      const brokenBpm = Math.max(40, Math.round(origBpm / 2));
+      setMetroBpm(brokenBpm);
+      const inSS = document.getElementById('slideshow').style.display !== 'none';
+      const brokenInterval = origInterval * 2;
+      if (inSS) ssInterval = brokenInterval;
       setTimeout(() => {
-        if (metroBpm !== origBpm) setMetroBpm(origBpm);
-        ssInterval = origInterval;
+        if (metroBpm === brokenBpm) setMetroBpm(origBpm);
+        if (ssInterval === brokenInterval) ssInterval = origInterval;
       }, oneInterval());
     }
   },
@@ -1489,6 +1624,30 @@ let eventChance = 0.10; // base probability 0–1, set via slider
 
 let eventFiring = false; // guard against cascaded tryFireEvent calls from loadSSPhoto
 
+let enabledEvents = new Set(EVENTS.map(e => e.name));
+let recentEventNames = []; // last couple fired, excluded from the next pick to avoid back-to-back repeats
+const EVENT_NO_REPEAT_WINDOW = 2;
+
+function eventLabel(name) {
+  return name.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase());
+}
+
+function renderEventToggles() {
+  const container = document.getElementById('eventTogglesList');
+  if (!container) return;
+  container.innerHTML = EVENTS.map(ev => `
+    <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#ccc;cursor:pointer">
+      <input type="checkbox" ${enabledEvents.has(ev.name) ? 'checked' : ''} onchange="toggleEventEnabled('${ev.name}', this.checked)">
+      ${eventLabel(ev.name)}
+    </label>
+  `).join('');
+}
+
+function toggleEventEnabled(name, on) {
+  if (on) enabledEvents.add(name); else enabledEvents.delete(name);
+  saveSettings();
+}
+
 function getEffectiveEventChance() {
   // +1.2% for every 10 BPM of the current min BPM (random mode) or current BPM (constant mode)
   const basis = metroMode === 'random' ? getCurrentMinBpm() : metroBpm;
@@ -1497,7 +1656,8 @@ function getEffectiveEventChance() {
 }
 
 function tryFireEvent() {
-  if (!EVENTS.length || eventFiring) return;
+  const pool = EVENTS.filter(ev => enabledEvents.has(ev.name));
+  if (!pool.length || eventFiring) return;
   const effectiveChance = getEffectiveEventChance();
   // Guarantee threshold: ceil(1/chance) - 1 misses → next is forced
   const threshold = effectiveChance > 0 ? Math.ceil(1 / effectiveChance) - 1 : Infinity;
@@ -1507,8 +1667,14 @@ function tryFireEvent() {
     return;
   }
   eventMisses = 0;
-  const event = EVENTS[Math.floor(Math.random() * EVENTS.length)];
+  // Avoid repeating whichever events fired most recently, unless too few are enabled to allow it
+  const candidates = pool.filter(ev => !recentEventNames.includes(ev.name));
+  const choices = candidates.length ? candidates : pool;
+  const event = choices[Math.floor(Math.random() * choices.length)];
+  recentEventNames.push(event.name);
+  if (recentEventNames.length > EVENT_NO_REPEAT_WINDOW) recentEventNames.shift();
   eventFiring = true;
+  _constantEventDurationMs = null; // fresh random duration for this firing (constant mode)
   try {
     event.fn();
     const dur = event.duration ? event.duration() : 2000;
