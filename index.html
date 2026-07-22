@@ -216,6 +216,10 @@
   </div>
 
   <div class="breadcrumb" id="breadcrumb"></div>
+  <div style="padding:8px 16px;background:var(--bg);border-bottom:1px solid var(--border)">
+    <input type="text" id="librarySearch" placeholder="Search this folder…" oninput="filterGrid(this.value)"
+      style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px">
+  </div>
 
   <div id="content">
     <div class="loading" id="loadingEl">
@@ -238,6 +242,8 @@
       <span id="eventIndicator" style="font-size:11px;color:var(--accent);opacity:0;transition:opacity .3s;font-family:monospace"></span>
     </div>
     <span class="ss-counter" id="ssCounter"></span>
+    <button class="ss-btn" onclick="toggleFavoriteCurrentSS()" id="ssFavBtn" title="Favorite this photo" style="font-size:18px;background:none;border:none;cursor:pointer;color:#ccc">☆</button>
+    <button class="ss-btn" onclick="toggleExcludeCurrentSS()" id="ssExclBtn" title="Exclude this photo from the rotation" style="font-size:16px;background:none;border:none;cursor:pointer;color:#ccc">🚫</button>
     <button onclick="closeSlideshow()" style="font-size:22px;color:#aaa;background:none;border:none;cursor:pointer">✕</button>
   </div>
   <div class="ss-progress"><div class="ss-progress-bar" id="ssBar" style="width:0%"></div></div>
@@ -342,7 +348,9 @@
   <div class="ss-img-wrap"><img id="vImg" src="" alt="" onclick="toggleViewerFullscreen()"></div>
   <div class="v-bar" id="vBottomBar">
     <button onclick="viewerPrev()" class="ss-btn">◀</button>
+    <button onclick="toggleFavoriteCurrentViewer()" class="ss-btn" id="vFavBtn" title="Favorite this photo">☆</button>
     <span id="vCounter" style="font-size:13px;color:#888;flex:1;text-align:center"></span>
+    <button onclick="toggleExcludeCurrentViewer()" class="ss-btn" id="vExclBtn" title="Exclude this photo from the rotation">🚫</button>
     <button onclick="toggleViewerFullscreen()" class="ss-btn" id="fsBtn" title="Fullscreen">⛶</button>
     <button onclick="viewerNext()" class="ss-btn">▶</button>
   </div>
@@ -364,6 +372,9 @@ let ssIndex = 0, ssTimer = null, ssInterval = 5000, ssShuffle = false, ssLoop = 
 let ssOrder = [], ssTransition = 'fade';
 let ssLastIndex = null;
 let seenPhotos = new Set();
+let favoritePhotos = new Set();   // fileIds — boosted in shuffle order
+let excludedPhotos = new Set();   // fileIds — never shown in the slideshow
+let lastShownAt = new Map();      // fileId → timestamp this session, used for recency weighting
 let viewerIdx = 0;
 let demoMode = false;
 let ssSlideshowIsFullscreen = false;
@@ -519,20 +530,51 @@ async function loadFolder(folderId) {
   }
 }
 
+let currentSearchQuery = '';
+
 function renderFiles(folders, photos) {
   document.getElementById('loadingEl').style.display = 'none';
   folderFiles = folders; photoFiles = photos;
   loadSeenPhotos();
+  loadFavAndExcl();
+  currentSearchQuery = '';
+  const searchInput = document.getElementById('librarySearch');
+  if (searchInput) searchInput.value = '';
+  renderGrid();
+}
+
+function filterGrid(query) {
+  currentSearchQuery = query;
+  renderGrid();
+}
+
+function renderGrid() {
   const grid = document.getElementById('grid');
   grid.innerHTML = '';
-  if (!folders.length && !photos.length) {
-    document.getElementById('emptyEl').style.display = 'block'; return;
+  if (!folderFiles.length && !photoFiles.length) {
+    document.getElementById('emptyEl').textContent = 'No photos or folders here.';
+    document.getElementById('emptyEl').style.display = 'block';
+    return;
   }
-  document.getElementById('emptyEl').style.display = 'none';
-  if (photos.length) {
-    document.getElementById('photoCount').textContent = `${photos.length} photo${photos.length!==1?'s':''}${folders.length ? `, ${folders.length} folder${folders.length!==1?'s':''}` : ''}`;
+  const q = currentSearchQuery.trim().toLowerCase();
+  const folders = q ? folderFiles.filter(f => f.name.toLowerCase().includes(q)) : folderFiles;
+  const photoEntries = photoFiles.map((f, i) => ({ f, i }));
+  const photos = q ? photoEntries.filter(({f}) => f.name.toLowerCase().includes(q)) : photoEntries;
+
+  if (photoFiles.length) {
+    document.getElementById('photoCount').textContent =
+      `${photoFiles.length} photo${photoFiles.length!==1?'s':''}${folderFiles.length ? `, ${folderFiles.length} folder${folderFiles.length!==1?'s':''}` : ''}` +
+      (q ? ` — ${photos.length} match${photos.length!==1?'es':''}` : '');
     document.getElementById('playBtn').style.display = 'flex';
   }
+
+  if (q && !folders.length && !photos.length) {
+    document.getElementById('emptyEl').textContent = `No matches for "${currentSearchQuery}"`;
+    document.getElementById('emptyEl').style.display = 'block';
+    return;
+  }
+  document.getElementById('emptyEl').style.display = 'none';
+
   for (const f of folders) {
     const d = document.createElement('div');
     d.className = 'folder-item';
@@ -540,15 +582,23 @@ function renderFiles(folders, photos) {
     d.onclick = () => { folderStack.push({id:f.id,name:f.name}); loadFolder(f.id); };
     grid.appendChild(d);
   }
-  photos.forEach((f, i) => {
+  photos.forEach(({f, i}) => {
     const d = document.createElement('div');
     d.className = 'grid-item';
+    d.style.position = 'relative';
     const img = document.createElement('img');
     img.loading = 'lazy';
     img.alt = f.name;
     img.src = demoMode ? f.thumbnailLink : (f.thumbnailLink ? f.thumbnailLink.replace('=s220','=s400') : '');
     img.onerror = () => { img.src = ''; d.style.background = '#2a2a2a'; };
     d.appendChild(img);
+    if (favoritePhotos.has(f.id)) {
+      const star = document.createElement('span');
+      star.textContent = '⭐';
+      star.style.cssText = 'position:absolute;top:4px;right:4px;font-size:14px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))';
+      d.appendChild(star);
+    }
+    if (excludedPhotos.has(f.id)) d.style.opacity = '0.35';
     d.onclick = () => openViewer(i);
     grid.appendChild(d);
   });
@@ -609,12 +659,62 @@ function renderViewer() {
   const f = photoFiles[viewerIdx];
   document.getElementById('vName').textContent = f.name;
   document.getElementById('vCounter').textContent = `${viewerIdx+1} / ${photoFiles.length}`;
+  updateViewerFavExclButtons();
   loadImageIntoEl(document.getElementById('vImg'), f).then(ok => {
     if (!ok) document.getElementById('vName').textContent = f.name + ' (failed to load)';
   });
 }
 function viewerPrev() { viewerIdx = (viewerIdx-1+photoFiles.length)%photoFiles.length; renderViewer(); }
 function viewerNext() { viewerIdx = (viewerIdx+1)%photoFiles.length; renderViewer(); }
+
+function toggleFavoriteCurrentViewer() {
+  const f = photoFiles[viewerIdx];
+  if (!f) return;
+  if (favoritePhotos.has(f.id)) favoritePhotos.delete(f.id); else favoritePhotos.add(f.id);
+  saveFavorites();
+  updateViewerFavExclButtons();
+}
+function toggleExcludeCurrentViewer() {
+  const f = photoFiles[viewerIdx];
+  if (!f) return;
+  if (excludedPhotos.has(f.id)) excludedPhotos.delete(f.id); else excludedPhotos.add(f.id);
+  saveExcluded();
+  updateViewerFavExclButtons();
+}
+function updateViewerFavExclButtons() {
+  const f = photoFiles[viewerIdx];
+  if (!f) return;
+  const favBtn = document.getElementById('vFavBtn');
+  const exclBtn = document.getElementById('vExclBtn');
+  if (favBtn) { favBtn.textContent = favoritePhotos.has(f.id) ? '⭐' : '☆'; }
+  if (exclBtn) { exclBtn.style.opacity = excludedPhotos.has(f.id) ? '1' : '0.45'; }
+}
+
+function currentSSFile() { return photoFiles[ssOrder[ssIndex]]; }
+function toggleFavoriteCurrentSS() {
+  const f = currentSSFile();
+  if (!f) return;
+  if (favoritePhotos.has(f.id)) favoritePhotos.delete(f.id); else favoritePhotos.add(f.id);
+  saveFavorites();
+  updateSSFavExclButtons();
+}
+function toggleExcludeCurrentSS() {
+  const f = currentSSFile();
+  if (!f) return;
+  if (excludedPhotos.has(f.id)) excludedPhotos.delete(f.id); else excludedPhotos.add(f.id);
+  saveExcluded();
+  updateSSFavExclButtons();
+  updateSeenCounter();
+  if (excludedPhotos.has(f.id)) ssNext(); // skip off it immediately once excluded
+}
+function updateSSFavExclButtons() {
+  const f = currentSSFile();
+  if (!f) return;
+  const favBtn = document.getElementById('ssFavBtn');
+  const exclBtn = document.getElementById('ssExclBtn');
+  if (favBtn) { favBtn.textContent = favoritePhotos.has(f.id) ? '⭐' : '☆'; }
+  if (exclBtn) { exclBtn.style.opacity = excludedPhotos.has(f.id) ? '1' : '0.45'; }
+}
 function toggleViewerFullscreen() {
   const topBar = document.getElementById('vTopBar');
   const botBar = document.getElementById('vBottomBar');
@@ -684,17 +784,33 @@ document.addEventListener('fullscreenchange', () => {
 });
 
 /* ===== SLIDESHOW ===== */
+function weightedShuffle(indices) {
+  const now = Date.now();
+  return indices
+    .map(i => {
+      const f = photoFiles[i];
+      const last = lastShownAt.get(f.id);
+      const hoursSince = last ? (now - last) / 3600000 : 999; // never shown this session → high weight
+      let weight = 1 + Math.min(hoursSince, 48); // cap so long-idle photos don't dominate forever
+      if (favoritePhotos.has(f.id)) weight *= 3;
+      // A-Res weighted random sampling without replacement: higher weight → key closer to 1
+      const key = Math.pow(Math.random(), 1 / weight);
+      return { i, key };
+    })
+    .sort((a, b) => b.key - a.key)
+    .map(x => x.i);
+}
+
 function buildSSOrder(startIdx=0) {
-  const unseen = photoFiles.map((_,i)=>i).filter(i => !seenPhotos.has(i));
+  const unseen = photoFiles.map((_,i)=>i).filter(i => !seenPhotos.has(i) && !excludedPhotos.has(photoFiles[i].id));
   if (unseen.length === 0) return null;
   if (ssShuffle) {
-    shuffle(unseen);
-    return unseen;
+    return weightedShuffle(unseen);
   }
   const sorted = [];
   for (let offset = 0; offset < photoFiles.length; offset++) {
     const i = (startIdx + offset) % photoFiles.length;
-    if (!seenPhotos.has(i)) sorted.push(i);
+    if (!seenPhotos.has(i) && !excludedPhotos.has(photoFiles[i].id)) sorted.push(i);
   }
   return sorted;
 }
@@ -733,7 +849,7 @@ function showAllSeenPrompt() {
 }
 
 function updateSeenCounter() {
-  const remaining = photoFiles.length - seenPhotos.size;
+  const remaining = photoFiles.filter((f,i) => !seenPhotos.has(i) && !excludedPhotos.has(f.id)).length;
   document.getElementById('ssCounter').textContent = `${ssIndex+1} / ${ssOrder.length}  (${remaining} unseen)`;
   document.getElementById('seenCount').textContent = seenPhotos.size;
   document.getElementById('totalCount').textContent = photoFiles.length;
@@ -817,6 +933,7 @@ function loadSSPhoto() {
   seenPhotos.add(idx);
   ssLastIndex = idx;
   saveSeenPhotos();
+  lastShownAt.set(f.id, Date.now());
   if (metroBpmOnSlide && metroMode === 'random') {
     setMetroBpm(randomBpm());
     startBpmCountdown(ssInterval / 1000);
@@ -825,6 +942,7 @@ function loadSSPhoto() {
   const img = document.getElementById('ssImg');
   document.getElementById('ssFileName').textContent = f.name;
   updateSeenCounter();
+  updateSSFavExclButtons();
   const handleResult = (ok) => { if (ok) ssLoadFailures = 0; else handleSSLoadFailure(); };
   if (ssTransition === 'fade') {
     img.classList.add('fade');
@@ -1738,6 +1856,21 @@ function loadSeenPhotos() {
   } catch(e) {}
 }
 
+function favKey() {
+  const folder = folderStack[folderStack.length - 1];
+  return 'ds_fav_' + (folder ? folder.id : 'root');
+}
+function exclKey() {
+  const folder = folderStack[folderStack.length - 1];
+  return 'ds_excl_' + (folder ? folder.id : 'root');
+}
+function loadFavAndExcl() {
+  try { favoritePhotos = new Set(JSON.parse(localStorage.getItem(favKey()) || '[]')); } catch(e) { favoritePhotos = new Set(); }
+  try { excludedPhotos = new Set(JSON.parse(localStorage.getItem(exclKey()) || '[]')); } catch(e) { excludedPhotos = new Set(); }
+}
+function saveFavorites() { localStorage.setItem(favKey(), JSON.stringify([...favoritePhotos])); }
+function saveExcluded() { localStorage.setItem(exclKey(), JSON.stringify([...excludedPhotos])); }
+
 // Auto-restore saved credentials and settings
 window.addEventListener('load', () => {
   const k = localStorage.getItem('ds_apiKey'), c = localStorage.getItem('ds_clientId');
@@ -1745,6 +1878,9 @@ window.addEventListener('load', () => {
   if (c) document.getElementById('clientId').value = c;
   loadSettings();
   updateMetroSettingsVisibility();
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {}); // best-effort; ignore if unsupported/blocked
+  }
 });
 </script>
 </body>
