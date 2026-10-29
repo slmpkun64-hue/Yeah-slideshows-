@@ -148,12 +148,46 @@
   #bpmDisplay.changed{color:var(--accent)}
 
   #versionBadge{position:fixed;bottom:10px;right:12px;font-size:10px;color:var(--text3);font-family:monospace;pointer-events:none;z-index:1}
-  .bpm-next{display:block;font-size:9px;color:#333;font-family:monospace;text-align:right;padding-right:10px;pointer-events:none;transition:color .3s};width:38px;height:38px;border-radius:50%;background:rgba(0,0,0,.6);border:1px solid #444;color:#fff;font-size:18px;align-items:center;justify-content:center;cursor:pointer}
+  .bpm-next{display:block;font-size:9px;color:#333;font-family:monospace;text-align:right;padding-right:10px;pointer-events:none;transition:color .3s}
+
+  /* Theme: forced light (overrides system) */
+  html.theme-light{
+    --bg:#f5f5f5;--bg2:#fff;--bg3:#f0f0f0;--text:#111;--text2:#555;--text3:#999;--border:#e0e0e0
+  }
+  html.theme-light #slideshow,html.theme-light #viewer{background:#111}
+  /* Theme: forced dark */
+  html.theme-dark{
+    --bg:#0e0e0e;--bg2:#1a1a1a;--bg3:#252525;--text:#f0f0f0;--text2:#aaa;--text3:#666;--border:#2e2e2e
+  }
 
   @media (prefers-color-scheme:light){
-    :root{--bg:#f5f5f5;--bg2:#fff;--bg3:#f0f0f0;--text:#111;--text2:#555;--text3:#999;--border:#e0e0e0}
-    #slideshow,#viewer{background:#111}
+    :root:not(.theme-dark){--bg:#f5f5f5;--bg2:#fff;--bg3:#f0f0f0;--text:#111;--text2:#555;--text3:#999;--border:#e0e0e0}
+    :root:not(.theme-dark) #slideshow,:root:not(.theme-dark) #viewer{background:#111}
   }
+
+  /* Help modal */
+  #helpModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:500;align-items:center;justify-content:center;padding:20px}
+  #helpModal.open{display:flex}
+  .help-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:24px;max-width:420px;width:100%;max-height:80vh;overflow-y:auto}
+  .help-card h2{font-size:18px;margin-bottom:16px}
+  .help-card kbd{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:12px;font-family:monospace}
+  .help-row{display:flex;justify-content:space-between;gap:12px;margin-bottom:10px;font-size:13px;color:var(--text2)}
+  .help-row span:last-child{color:var(--text)}
+
+  /* Session timer */
+  #ssSessionTimer{font-size:11px;color:#888;font-family:monospace}
+
+  /* Mute / volume indicator on metronome bar */
+  .metro-mute-btn{position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:14px;opacity:.5;cursor:pointer;z-index:2;background:none;border:none;color:#888;padding:4px}
+  .metro-mute-btn:hover,.metro-mute-btn.muted{opacity:1;color:var(--accent)}
+
+  /* Sort bar */
+  .sort-bar{display:flex;align-items:center;gap:8px;padding:6px 16px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border)}
+  .sort-bar select{background:var(--bg2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px}
+
+  /* Settings sections */
+  .ss-settings-section{margin-top:12px;border-top:1px solid #333;padding-top:10px}
+  .ss-settings-section h4{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
 </style>
 </head>
 <body>
@@ -212,6 +246,8 @@
   <div class="topbar">
     <span class="logo-sm">🖼️</span>
     <span class="title" id="topTitle">DriveSlide</span>
+    <button class="icon-btn" onclick="toggleTheme()" title="Toggle theme" id="themeBtn">◐</button>
+    <button class="icon-btn" onclick="openHelp()" title="Keyboard shortcuts">?</button>
     <button class="icon-btn" onclick="signOut()" title="Sign out">↩</button>
   </div>
 
@@ -219,6 +255,17 @@
   <div style="padding:8px 16px;background:var(--bg);border-bottom:1px solid var(--border)">
     <input type="text" id="librarySearch" placeholder="Search this folder…" oninput="filterGrid(this.value)"
       style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px">
+  </div>
+  <div class="sort-bar">
+    <span>Sort</span>
+    <select id="sortSelect" onchange="changeSort(this.value)">
+      <option value="name">Name</option>
+      <option value="date">Date modified</option>
+      <option value="size">Size</option>
+    </select>
+    <label style="margin-left:auto;display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+      <input type="checkbox" id="includeSubfolders" onchange="saveSettings()"> Include subfolders in slideshow
+    </label>
   </div>
 
   <div id="content">
@@ -241,6 +288,7 @@
       <span class="ss-title" id="ssTitle">Slideshow</span>
       <span id="eventIndicator" style="font-size:11px;color:var(--accent);opacity:0;transition:opacity .3s;font-family:monospace"></span>
     </div>
+    <span id="ssSessionTimer" title="Session time">0:00</span>
     <span class="ss-counter" id="ssCounter"></span>
     <button class="ss-btn" onclick="toggleFavoriteCurrentSS()" id="ssFavBtn" title="Favorite this photo" style="font-size:18px;background:none;border:none;cursor:pointer;color:#ccc">☆</button>
     <button class="ss-btn" onclick="toggleExcludeCurrentSS()" id="ssExclBtn" title="Exclude this photo from the rotation" style="font-size:16px;background:none;border:none;cursor:pointer;color:#ccc">🚫</button>
@@ -262,6 +310,7 @@
     <button class="ss-btn" onclick="ssNext()">▶</button>
   </div>
   <div id="metronomeBar" style="display:none">
+    <button class="metro-mute-btn" id="metroMuteBtn" onclick="toggleMetroMute()" title="Mute / unmute metronome">🔊</button>
     <div id="metroMid"></div>
     <span id="bpmDisplay"></span>
     <span id="bpmNext" class="bpm-next"></span>
@@ -269,15 +318,19 @@
   </div>
   <div class="ss-settings" id="ssSettings" style="display:none">
     <h3>Slideshow settings</h3>
+    <div class="ss-settings-section" style="margin-top:0;border-top:none;padding-top:0">
+      <h4>Playback</h4>
     <div class="ss-setting-row">
       <span>Interval</span>
-      <input type="range" min="2" max="20" value="5" id="intervalSlider" oninput="updateInterval(this.value)">
+      <input type="range" min="2" max="30" value="5" id="intervalSlider" oninput="updateInterval(this.value)">
       <span id="intervalVal" style="min-width:32px;font-size:12px;color:var(--text2)">5s</span>
     </div>
     <div class="ss-setting-row">
       <span>Transition</span>
       <select id="transitionSel" onchange="updateTransition(this.value)">
         <option value="fade">Fade</option>
+        <option value="slide">Slide</option>
+        <option value="zoom">Zoom</option>
         <option value="instant">Instant</option>
       </select>
     </div>
@@ -289,9 +342,17 @@
       <span>Loop</span>
       <div class="toggle on" id="loopToggle" onclick="toggleLoop()"></div>
     </div>
-    <div class="ss-setting-row" style="margin-top:10px;border-top:1px solid #333;padding-top:10px">
-      <span>Metronome</span>
+    </div>
+    <div class="ss-settings-section">
+      <h4>Metronome</h4>
+    <div class="ss-setting-row">
+      <span>Mode</span>
       <button id="metroModeBtn" onclick="toggleMetroMode()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer">Random</button>
+    </div>
+    <div class="ss-setting-row">
+      <span>Volume</span>
+      <input type="range" min="0" max="100" value="25" id="metroVolumeSlider" oninput="updateMetroVolume(this.value)">
+      <span id="metroVolumeVal" style="min-width:36px;font-size:12px;color:var(--text2)">25%</span>
     </div>
     <div class="ss-setting-row">
       <span style="font-size:12px;color:#aaa">BPM on slide</span>
@@ -317,19 +378,40 @@
       <input type="range" min="5" max="60" value="30" id="metroRampDurationSlider" oninput="updateMetroRampDuration(this.value)">
       <span id="metroRampDurationVal" style="min-width:48px;font-size:12px;color:var(--text2)">30min</span>
     </div>
-    <div class="ss-setting-row" style="margin-top:14px;border-top:1px solid #333;padding-top:12px">
-      <span style="font-size:12px;color:#888">Seen: <span id="seenCount">0</span> / <span id="totalCount">0</span></span>
-      <button onclick="resetSeenPhotos()" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer">↺ Reset</button>
     </div>
-    <div class="ss-setting-row" style="margin-top:10px;border-top:1px solid #333;padding-top:10px">
-      <span style="font-size:12px;color:#aaa">Event chance</span>
-      <input type="range" min="0" max="100" value="10" id="eventChanceSlider" oninput="updateEventChance(this.value)">
-      <span id="eventChanceVal" style="min-width:36px;font-size:12px;color:var(--text2)">10%</span>
+    <div class="ss-settings-section">
+      <h4>History</h4>
+      <div class="ss-setting-row">
+        <span style="font-size:12px;color:#888">Seen: <span id="seenCount">0</span> / <span id="totalCount">0</span></span>
+        <button onclick="resetSeenPhotos()" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer">↺ Reset</button>
+      </div>
     </div>
-    <div class="ss-setting-row" style="margin-top:8px;flex-direction:column;align-items:flex-start;gap:6px">
-      <span style="font-size:12px;color:#aaa">Events</span>
-      <div id="eventTogglesList" style="display:flex;flex-wrap:wrap;gap:6px 14px"></div>
+    <div class="ss-settings-section">
+      <h4>Random events</h4>
+      <div class="ss-setting-row">
+        <span style="font-size:12px;color:#aaa">Event chance</span>
+        <input type="range" min="0" max="100" value="10" id="eventChanceSlider" oninput="updateEventChance(this.value)">
+        <span id="eventChanceVal" style="min-width:36px;font-size:12px;color:var(--text2)">10%</span>
+      </div>
+      <div class="ss-setting-row" style="margin-top:8px;flex-direction:column;align-items:flex-start;gap:6px">
+        <div id="eventTogglesList" style="display:flex;flex-wrap:wrap;gap:6px 14px"></div>
+      </div>
     </div>
+  </div>
+</div>
+
+<!-- Help modal -->
+<div id="helpModal" onclick="if(event.target===this)closeHelp()">
+  <div class="help-card">
+    <h2>Keyboard shortcuts</h2>
+    <div class="help-row"><span>Next / previous</span><span><kbd>→</kbd> <kbd>←</kbd></span></div>
+    <div class="help-row"><span>Pause / play</span><span><kbd>Space</kbd></span></div>
+    <div class="help-row"><span>Fullscreen</span><span><kbd>F</kbd></span></div>
+    <div class="help-row"><span>Mute metronome</span><span><kbd>M</kbd></span></div>
+    <div class="help-row"><span>Close</span><span><kbd>Esc</kbd></span></div>
+    <div class="help-row"><span>Help</span><span><kbd>?</kbd></span></div>
+    <p style="margin-top:16px;font-size:12px;color:var(--text3)">Swipe left/right on mobile to change photos. Favorites are boosted in shuffle; excluded photos are never shown.</p>
+    <button class="btn-primary" style="margin-top:16px" onclick="closeHelp()">Got it</button>
   </div>
 </div>
 
@@ -378,6 +460,12 @@ let lastShownAt = new Map();      // fileId → timestamp this session, used for
 let viewerIdx = 0;
 let demoMode = false;
 let ssSlideshowIsFullscreen = false;
+let currentSort = 'name';
+let metroVolume = 0.25;           // 0–1 gain
+let metroMuted = false;
+let themePref = 'system';         // 'system' | 'dark' | 'light'
+let ssSessionStart = null;
+let ssSessionTimerId = null;
 
 let wakeLock = null;
 async function requestWakeLock() {
@@ -414,6 +502,73 @@ const DEMO_PHOTOS = [
   {id:'d11',name:'Lavender fields.jpg',thumbnailLink:'https://picsum.photos/seed/lavender/800/600',webContentLink:'https://picsum.photos/seed/lavender/1600/1200'},
   {id:'d12',name:'Old town street.jpg',thumbnailLink:'https://picsum.photos/seed/oldtown/800/600',webContentLink:'https://picsum.photos/seed/oldtown/1600/1200'},
 ];
+
+/* ===== Theme / help / volume / sort / session timer ===== */
+function applyTheme() {
+  document.documentElement.classList.remove('theme-dark', 'theme-light');
+  if (themePref === 'dark') document.documentElement.classList.add('theme-dark');
+  else if (themePref === 'light') document.documentElement.classList.add('theme-light');
+  const btn = document.getElementById('themeBtn');
+  if (btn) btn.textContent = themePref === 'dark' ? '☀' : themePref === 'light' ? '☾' : '◐';
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', themePref === 'light' ? '#f5f5f5' : '#0e0e0e');
+}
+function toggleTheme() {
+  themePref = themePref === 'system' ? 'dark' : themePref === 'dark' ? 'light' : 'system';
+  applyTheme();
+  saveSettings();
+}
+function openHelp() { document.getElementById('helpModal').classList.add('open'); }
+function closeHelp() { document.getElementById('helpModal').classList.remove('open'); }
+
+function updateMetroVolume(v) {
+  metroVolume = (+v) / 100;
+  const el = document.getElementById('metroVolumeVal');
+  if (el) el.textContent = v + '%';
+  if (metroMuted && metroVolume > 0) { metroMuted = false; updateMuteUI(); }
+  saveSettings();
+}
+function toggleMetroMute() {
+  metroMuted = !metroMuted;
+  updateMuteUI();
+}
+function updateMuteUI() {
+  document.querySelectorAll('.metro-mute-btn').forEach(b => {
+    b.textContent = metroMuted ? '🔇' : '🔊';
+    b.classList.toggle('muted', metroMuted);
+  });
+}
+
+function changeSort(sort) {
+  currentSort = sort;
+  if (!photoFiles.length) return;
+  const sorted = [...photoFiles];
+  if (sort === 'name') sorted.sort((a, b) => a.name.localeCompare(b.name));
+  else if (sort === 'date') sorted.sort((a, b) => (b.modifiedTime || '').localeCompare(a.modifiedTime || ''));
+  else if (sort === 'size') sorted.sort((a, b) => (+b.size || 0) - (+a.size || 0));
+  photoFiles = sorted;
+  renderGrid();
+  saveSettings();
+}
+
+function startSessionTimer() {
+  ssSessionStart = Date.now();
+  clearInterval(ssSessionTimerId);
+  const tick = () => {
+    if (!ssSessionStart) return;
+    const secs = Math.floor((Date.now() - ssSessionStart) / 1000);
+    const m = Math.floor(secs / 60), s = secs % 60;
+    const el = document.getElementById('ssSessionTimer');
+    if (el) el.textContent = m + ':' + String(s).padStart(2, '0');
+  };
+  tick();
+  ssSessionTimerId = setInterval(tick, 1000);
+}
+function stopSessionTimer() {
+  clearInterval(ssSessionTimerId);
+  ssSessionTimerId = null;
+  ssSessionStart = null;
+}
 
 function loadGAPI() {
   return new Promise(res => {
@@ -510,8 +665,8 @@ async function loadFolder(folderId) {
     do {
       const params = {
         q: `'${folderId}' in parents and trashed=false`,
-        fields: 'nextPageToken,files(id,name,mimeType,thumbnailLink,webContentLink)',
-        pageSize: 200, orderBy: 'name'
+        fields: 'nextPageToken,files(id,name,mimeType,thumbnailLink,webContentLink,modifiedTime,size)',
+        pageSize: 200, orderBy: 'folder,name'
       };
       if (pageToken) params.pageToken = pageToken;
       const res = await gapi.client.drive.files.list(params);
@@ -815,7 +970,51 @@ function buildSSOrder(startIdx=0) {
   return sorted;
 }
 
-function startSlideshow(startIdx=null) {
+async function collectPhotosRecursive(folderId, depth = 0, maxDepth = 4) {
+  if (depth > maxDepth || demoMode) return [];
+  let photos = [], pageToken = null;
+  try {
+    do {
+      const params = {
+        q: `'${folderId}' in parents and trashed=false`,
+        fields: 'nextPageToken,files(id,name,mimeType,thumbnailLink,webContentLink,modifiedTime,size)',
+        pageSize: 200
+      };
+      if (pageToken) params.pageToken = pageToken;
+      const res = await gapi.client.drive.files.list(params);
+      const data = res.result;
+      pageToken = data.nextPageToken;
+      for (const f of (data.files || [])) {
+        if (f.mimeType === 'application/vnd.google-apps.folder') {
+          const nested = await collectPhotosRecursive(f.id, depth + 1, maxDepth);
+          photos = photos.concat(nested);
+        } else if (PHOTO_MIME.includes(f.mimeType)) {
+          photos.push(f);
+        }
+      }
+    } while (pageToken);
+  } catch (e) { console.error('Recursive collect failed', e); }
+  return photos;
+}
+
+async function startSlideshow(startIdx=null) {
+  const includeSub = document.getElementById('includeSubfolders')?.checked;
+  if (includeSub && !demoMode && folderFiles.length) {
+    document.getElementById('playBtn').textContent = '…';
+    try {
+      const currentId = folderStack[folderStack.length - 1].id;
+      const all = await collectPhotosRecursive(currentId);
+      if (all.length) {
+        // Deduplicate by id
+        const seen = new Set();
+        photoFiles = all.filter(f => { if (seen.has(f.id)) return false; seen.add(f.id); return true; });
+        loadSeenPhotos();
+        loadFavAndExcl();
+        renderGrid();
+      }
+    } catch (e) { console.error(e); }
+    document.getElementById('playBtn').textContent = '▶';
+  }
   if (!photoFiles.length) return;
   const resumeFrom = startIdx !== null ? startIdx : (ssLastIndex !== null ? ssLastIndex : 0);
   let order = buildSSOrder(resumeFrom);
@@ -837,6 +1036,7 @@ function startSlideshow(startIdx=null) {
   loadSSPhoto();
   scheduleSS();
   startMetronome();
+  startSessionTimer();
   requestWakeLock();
 }
 
@@ -944,11 +1144,19 @@ function loadSSPhoto() {
   updateSeenCounter();
   updateSSFavExclButtons();
   const handleResult = (ok) => { if (ok) ssLoadFailures = 0; else handleSSLoadFailure(); };
-  if (ssTransition === 'fade') {
+  img.style.transform = '';
+  img.style.transition = 'opacity .45s ease, transform .45s ease';
+  if (ssTransition === 'fade' || ssTransition === 'slide' || ssTransition === 'zoom') {
+    if (ssTransition === 'slide') img.style.transform = 'translateX(24px)';
+    if (ssTransition === 'zoom') img.style.transform = 'scale(1.06)';
     img.classList.add('fade');
     setTimeout(() => {
-      loadImageIntoEl(img, f).then(ok => { img.classList.remove('fade'); handleResult(ok); });
-    }, 250);
+      loadImageIntoEl(img, f).then(ok => {
+        img.style.transform = 'none';
+        img.classList.remove('fade');
+        handleResult(ok);
+      });
+    }, 220);
   } else {
     loadImageIntoEl(img, f).then(handleResult);
   }
@@ -1014,6 +1222,7 @@ function closeSlideshow() {
   }
   document.getElementById('slideshow').style.display = 'none';
   stopMetronome();
+  stopSessionTimer();
   releaseWakeLock();
   preloadCache.forEach(url => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); });
   preloadCache.clear();
@@ -1023,10 +1232,13 @@ function toggleSettings() {
   s.style.display = s.style.display === 'none' ? 'block' : 'none';
 }
 function saveSettings() {
+  const includeSub = document.getElementById('includeSubfolders');
   localStorage.setItem('ds_settings', JSON.stringify({
     ssInterval, ssTransition, ssShuffle, ssLoop, metroMode, metroBpmOnSlide,
     metroBpmInterval, metroConstStep, metroConstStartBpm, metroRampDuration,
-    disabledEvents: EVENTS.map(e => e.name).filter(n => !enabledEvents.has(n))
+    metroVolume, themePref, currentSort,
+    includeSubfolders: includeSub ? includeSub.checked : false,
+    disabledEvents: typeof EVENTS !== 'undefined' ? EVENTS.map(e => e.name).filter(n => !enabledEvents.has(n)) : []
   }));
 }
 function loadSettings() {
@@ -1081,6 +1293,22 @@ function loadSettings() {
       metroBpmOnSlide = true;
       document.getElementById('bpmOnSlideToggle').classList.add('on');
     }
+    if (typeof s.metroVolume === 'number') {
+      metroVolume = s.metroVolume;
+      const pct = Math.round(metroVolume * 100);
+      const volSlider = document.getElementById('metroVolumeSlider');
+      if (volSlider) { volSlider.value = pct; document.getElementById('metroVolumeVal').textContent = pct + '%'; }
+    }
+    if (s.themePref) { themePref = s.themePref; applyTheme(); }
+    if (s.currentSort) {
+      currentSort = s.currentSort;
+      const sortEl = document.getElementById('sortSelect');
+      if (sortEl) sortEl.value = currentSort;
+    }
+    if (typeof s.includeSubfolders === 'boolean') {
+      const cb = document.getElementById('includeSubfolders');
+      if (cb) cb.checked = s.includeSubfolders;
+    }
     if (Array.isArray(s.disabledEvents)) {
       s.disabledEvents.forEach(name => enabledEvents.delete(name));
     }
@@ -1129,11 +1357,20 @@ document.getElementById('viewer').addEventListener('touchend', e => {
 
 // Keyboard shortcuts
 document.addEventListener('keydown', e => {
+  if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
+    const help = document.getElementById('helpModal');
+    if (help.classList.contains('open')) closeHelp(); else openHelp();
+    return;
+  }
+  if (e.key === 'Escape' && document.getElementById('helpModal').classList.contains('open')) {
+    closeHelp(); return;
+  }
   if (document.getElementById('slideshow').style.display !== 'none') {
     if (e.key === 'ArrowRight') ssNext();
     if (e.key === 'ArrowLeft') ssPrev();
     if (e.key === ' ') { e.preventDefault(); ssTogglePause(); }
     if (e.key === 'f' || e.key === 'F') toggleSlideshowFullscreen();
+    if (e.key === 'm' || e.key === 'M') toggleMetroMute();
     if (e.key === 'Escape' && !ssSlideshowIsFullscreen) closeSlideshow();
   }
   if (document.getElementById('viewer').style.display !== 'none') {
@@ -1270,12 +1507,13 @@ function toggleMetroMode() {
 let beepPitch = 880; // controlled by pitch shift event
 
 function scheduleBeep(whenCtxTime) {
-  if (!audioCtx) return;
+  if (!audioCtx || metroMuted || metroVolume <= 0) return;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.connect(gain); gain.connect(audioCtx.destination);
   osc.type = 'sine'; osc.frequency.value = beepPitch;
-  gain.gain.setValueAtTime(0.25, whenCtxTime);
+  const vol = Math.max(0.001, metroVolume * 0.4);
+  gain.gain.setValueAtTime(vol, whenCtxTime);
   gain.gain.exponentialRampToValueAtTime(0.001, whenCtxTime + 0.12);
   osc.start(whenCtxTime);
   osc.stop(whenCtxTime + 0.12);
@@ -1444,7 +1682,7 @@ let _silenceToken = 0;
 let _echoToken = 0;
 
 const EVENTS = [
-  // 1. BPM spike
+  /* ===== Core tempo events ===== */
   {
     name: 'bpmSpike', duration: () => oneInterval(),
     fn: () => {
@@ -1456,8 +1694,6 @@ const EVENTS = [
       setTimeout(() => { if (metroBpm === spikedBpm) setMetroBpm(originalBpm); }, oneInterval());
     }
   },
-
-  // 2. Double time
   {
     name: 'doubleTime', duration: () => oneInterval(),
     fn: () => {
@@ -1467,8 +1703,6 @@ const EVENTS = [
       setTimeout(() => { if (metroBpm === doubled) setMetroBpm(orig); }, oneInterval());
     }
   },
-
-  // 3. Half time
   {
     name: 'halfTime', duration: () => oneInterval(),
     fn: () => {
@@ -1478,8 +1712,82 @@ const EVENTS = [
       setTimeout(() => { if (metroBpm === halved) setMetroBpm(orig); }, oneInterval());
     }
   },
+  {
+    name: 'drop', duration: () => oneInterval(),
+    fn: () => {
+      const orig = metroBpm;
+      setMetroBpm(40);
+      setTimeout(() => { if (metroBpm === 40) setMetroBpm(orig); }, oneInterval());
+    }
+  },
+  {
+    name: 'climax', duration: () => oneInterval(),
+    fn: () => {
+      if (document.getElementById('slideshow').style.display !== 'none') {
+        ssIndex = (ssIndex + 1) % ssOrder.length;
+        loadSSPhoto(); scheduleSS();
+      }
+      const orig = metroBpm;
+      setMetroBpm(320);
+      setTimeout(() => { if (metroBpm === 320) setMetroBpm(orig); }, oneInterval());
+    }
+  },
+  {
+    name: 'drift', duration: () => 10000,
+    fn: () => {
+      let ticks = 0;
+      const driftTimer = setInterval(() => {
+        ticks++;
+        setMetroBpm(metroBpm + 1);
+        if (ticks >= 10) clearInterval(driftTimer);
+      }, 1000);
+    }
+  },
+  {
+    name: 'breakdown', duration: () => oneInterval(),
+    fn: () => {
+      const origBpm = metroBpm;
+      const origInterval = ssInterval;
+      const brokenBpm = Math.max(40, Math.round(origBpm / 2));
+      setMetroBpm(brokenBpm);
+      const inSS = document.getElementById('slideshow').style.display !== 'none';
+      const brokenInterval = origInterval * 2;
+      if (inSS) ssInterval = brokenInterval;
+      setTimeout(() => {
+        if (metroBpm === brokenBpm) setMetroBpm(origBpm);
+        if (ssInterval === brokenInterval) ssInterval = origInterval;
+      }, oneInterval());
+    }
+  },
+  {
+    name: 'syncBurst', duration: () => oneInterval(),
+    fn: () => {
+      const origBpm = metroBpm;
+      const origInterval = ssInterval;
+      const syncedBpm = Math.min(origBpm * 2, 400);
+      setMetroBpm(syncedBpm);
+      const inSS = document.getElementById('slideshow').style.display !== 'none';
+      const syncedInterval = Math.max(1000, Math.round(origInterval / 2));
+      if (inSS) ssInterval = syncedInterval;
+      setTimeout(() => {
+        if (metroBpm === syncedBpm) setMetroBpm(origBpm);
+        if (ssInterval === syncedInterval) ssInterval = origInterval;
+      }, oneInterval());
+    }
+  },
 
-  // 4. Pitch shift
+  /* ===== Rhythm / sound texture ===== */
+  {
+    name: 'triplet', duration: () => oneInterval(),
+    fn: () => {
+      metroTripletDepth++;
+      metroTriplet = true;
+      setTimeout(() => {
+        metroTripletDepth = Math.max(0, metroTripletDepth - 1);
+        if (metroTripletDepth === 0) metroTriplet = false;
+      }, oneInterval());
+    }
+  },
   {
     name: 'pitchShift', duration: () => oneInterval(),
     fn: () => {
@@ -1489,29 +1797,83 @@ const EVENTS = [
       setTimeout(() => { if (beepPitch === newPitch) beepPitch = origPitch; }, oneInterval());
     }
   },
-
-  // 5. Skip — moves to next photo without double-advancing
   {
-    name: 'skip', duration: null,
+    name: 'echo', duration: () => oneInterval(),
     fn: () => {
-      if (document.getElementById('slideshow').style.display === 'none') return;
-      ssIndex = (ssIndex + 1) % ssOrder.length;
-      loadSSPhoto(); scheduleSS();
+      if (!audioCtx || metroMuted || metroVolume <= 0) return;
+      const echoDelay = 0.18;
+      const myToken = ++_echoToken;
+      const _origScheduleBeep = scheduleBeep;
+      window._echoScheduleBeep = function(when) {
+        _origScheduleBeep(when);
+        if (metroMuted || metroVolume <= 0) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'sine'; osc.frequency.value = beepPitch;
+        const vol = Math.max(0.001, metroVolume * 0.15);
+        gain.gain.setValueAtTime(vol, when + echoDelay);
+        gain.gain.exponentialRampToValueAtTime(0.001, when + echoDelay + 0.12);
+        osc.start(when + echoDelay); osc.stop(when + echoDelay + 0.12);
+      };
+      setTimeout(() => { if (_echoToken === myToken) window._echoScheduleBeep = null; }, oneInterval());
+    }
+  },
+  {
+    name: 'silence', duration: () => oneInterval(),
+    fn: () => {
+      const inViewer = document.getElementById('metronomeBarViewer').style.display !== 'none';
+      const dur = oneInterval();
+      const myToken = ++_silenceToken;
+      stopMetronome();
+      setTimeout(() => { if (_silenceToken === myToken) startMetronome(inViewer); }, dur);
+    }
+  },
+  // Stutter: burst of rapid micro-beeps then resume normal tempo
+  {
+    name: 'stutter', duration: () => 900,
+    fn: () => {
+      if (!audioCtx || metroMuted || metroVolume <= 0) return;
+      const n = 5 + Math.floor(Math.random() * 3); // 5–7 hits
+      const gap = 0.07;
+      const start = audioCtx.currentTime + 0.02;
+      for (let i = 0; i < n; i++) {
+        const when = start + i * gap;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'sine';
+        osc.frequency.value = beepPitch * (i % 2 === 0 ? 1 : 1.5);
+        const vol = Math.max(0.001, metroVolume * 0.35);
+        gain.gain.setValueAtTime(vol, when);
+        gain.gain.exponentialRampToValueAtTime(0.001, when + 0.06);
+        osc.start(when); osc.stop(when + 0.06);
+      }
+    }
+  },
+  // Swell: temporary volume surge then settle
+  {
+    name: 'swell', duration: () => oneInterval(),
+    fn: () => {
+      const orig = metroVolume;
+      const peak = Math.min(1, orig * 2.2 + 0.15);
+      metroVolume = peak;
+      const mid = oneInterval() / 2;
+      setTimeout(() => { metroVolume = Math.min(1, (orig + peak) / 2); }, mid);
+      setTimeout(() => { metroVolume = orig; }, oneInterval());
+    }
+  },
+  // Offbeat: shift scheduling so clicks land on the off-beat
+  {
+    name: 'offbeat', duration: () => oneInterval(),
+    fn: () => {
+      if (!audioCtx) return;
+      const halfBeat = (60 / metroBpm) / 2;
+      nextBeatTime = audioCtx.currentTime + halfBeat;
     }
   },
 
-  // 6. Rewind — goes back 2–3 photos
-  {
-    name: 'rewind', duration: null,
-    fn: () => {
-      if (document.getElementById('slideshow').style.display === 'none') return;
-      const steps = Math.random() < 0.5 ? 2 : 3;
-      ssIndex = (ssIndex - steps + ssOrder.length) % ssOrder.length;
-      loadSSPhoto(); scheduleSS();
-    }
-  },
-
-  // 7. Speed burst — 3 slides
+  /* ===== Slideshow motion ===== */
   {
     name: 'speedBurst', duration: () => oneInterval() * 3,
     fn: () => {
@@ -1532,8 +1894,6 @@ const EVENTS = [
       window._ssNextOverride = wrapper;
     }
   },
-
-  // 8. Freeze — 3–5 seconds
   {
     name: 'freeze', duration: () => Math.round((3 + Math.random() * 2) * 1000),
     fn: () => {
@@ -1544,89 +1904,15 @@ const EVENTS = [
       setTimeout(() => { if (ssPaused) ssTogglePause(); }, freezeDur);
     }
   },
-
-  // 9. Echo — one interval
   {
-    name: 'echo', duration: () => oneInterval(),
-    fn: () => {
-      if (!audioCtx) return;
-      const echoDelay = 0.18;
-      const myToken = ++_echoToken;
-      const _origScheduleBeep = scheduleBeep;
-      window._echoScheduleBeep = function(when) {
-        _origScheduleBeep(when);
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.type = 'sine'; osc.frequency.value = beepPitch;
-        gain.gain.setValueAtTime(0.08, when + echoDelay);
-        gain.gain.exponentialRampToValueAtTime(0.001, when + echoDelay + 0.12);
-        osc.start(when + echoDelay); osc.stop(when + echoDelay + 0.12);
-      };
-      setTimeout(() => { if (_echoToken === myToken) window._echoScheduleBeep = null; }, oneInterval());
-    }
-  },
-
-  // 12. Silence — 3–5 seconds
-  {
-    name: 'silence', duration: () => oneInterval(),
-    fn: () => {
-      const inViewer = document.getElementById('metronomeBarViewer').style.display !== 'none';
-      const dur = oneInterval();
-      const myToken = ++_silenceToken;
-      stopMetronome();
-      setTimeout(() => { if (_silenceToken === myToken) startMetronome(inViewer); }, dur);
-    }
-  },
-
-  // 14. Slow burn — 2 slides
-  {
-    name: 'slowBurn', duration: () => oneInterval() * 2 * 2,
+    name: 'rewind', duration: null,
     fn: () => {
       if (document.getElementById('slideshow').style.display === 'none') return;
-      const orig = ssInterval;
-      const slowInterval = orig * 2;
-      ssInterval = slowInterval;
-      let count = 0;
-      const prevOverride = window._ssNextOverride;
-      const wrapper = function() {
-        if (prevOverride) prevOverride();
-        count++;
-        if (count >= 2) {
-          if (ssInterval === slowInterval) ssInterval = orig;
-          if (window._ssNextOverride === wrapper) window._ssNextOverride = prevOverride;
-        }
-      };
-      window._ssNextOverride = wrapper;
+      const steps = Math.random() < 0.5 ? 2 : 3;
+      ssIndex = (ssIndex - steps + ssOrder.length) % ssOrder.length;
+      loadSSPhoto(); scheduleSS();
     }
   },
-
-  // 15. Loop — 2–3 repeats
-  {
-    name: 'loop', duration: () => oneInterval() * 3,
-    fn: () => {
-      if (document.getElementById('slideshow').style.display === 'none') return;
-      const repeats = Math.random() < 0.5 ? 2 : 3;
-      const loopIdx = ssOrder[ssIndex]; // the photo being looped
-      let count = 0;
-      const prevOverride = window._ssNextOverride;
-      const wrapper = function() {
-        count++;
-        if (count < repeats) {
-          ssIndex = (ssIndex - 1 + ssOrder.length) % ssOrder.length;
-          // keep it from being permanently seen until the loop finishes
-          seenPhotos.delete(loopIdx);
-        } else {
-          seenPhotos.add(loopIdx); // mark seen for real now
-          if (window._ssNextOverride === wrapper) window._ssNextOverride = prevOverride;
-          if (prevOverride) prevOverride();
-        }
-      };
-      window._ssNextOverride = wrapper;
-    }
-  },
-
-  // 16. Jump — instant
   {
     name: 'jump', duration: null,
     fn: () => {
@@ -1636,101 +1922,35 @@ const EVENTS = [
       loadSSPhoto(); scheduleSS();
     }
   },
-
-  // 16. Backstep — goes back 1 photo
+  // Hold: keep the same photo longer while metronome keeps going
   {
-    name: 'backstep', duration: null,
+    name: 'hold', duration: () => oneInterval() * 2,
     fn: () => {
       if (document.getElementById('slideshow').style.display === 'none') return;
-      ssIndex = (ssIndex - 1 + ssOrder.length) % ssOrder.length;
-      loadSSPhoto(); scheduleSS();
-    }
-  },
-
-  // 18. Sync burst — one interval
-  {
-    name: 'syncBurst', duration: () => oneInterval(),
-    fn: () => {
-      const origBpm = metroBpm;
-      const origInterval = ssInterval;
-      const syncedBpm = Math.min(origBpm * 2, 400);
-      setMetroBpm(syncedBpm);
-      const inSS = document.getElementById('slideshow').style.display !== 'none';
-      const syncedInterval = Math.max(1000, Math.round(origInterval / 2));
-      if (inSS) ssInterval = syncedInterval;
+      const orig = ssInterval;
+      const held = orig * 2.5;
+      ssInterval = held;
+      clearTimeout(ssTimer);
+      if (!ssPaused) ssTimer = setTimeout(ssNext, ssInterval);
       setTimeout(() => {
-        if (metroBpm === syncedBpm) setMetroBpm(origBpm);
-        if (ssInterval === syncedInterval) ssInterval = origInterval;
-      }, oneInterval());
+        if (ssInterval === held) {
+          ssInterval = orig;
+          if (!ssPaused) { clearTimeout(ssTimer); ssTimer = setTimeout(ssNext, ssInterval); }
+        }
+      }, held);
     }
   },
-
-  // 19. Drift — 10 seconds
+  // Flash: brief full-screen white pulse on the beat
   {
-    name: 'drift', duration: () => 10000,
+    name: 'flash', duration: () => 400,
     fn: () => {
-      let ticks = 0;
-      const driftTimer = setInterval(() => {
-        ticks++;
-        setMetroBpm(metroBpm + 1);
-        if (ticks >= 10) clearInterval(driftTimer);
-      }, 1000);
-    }
-  },
-
-  // 20. Drop — one interval
-  {
-    name: 'drop', duration: () => oneInterval(),
-    fn: () => {
-      const orig = metroBpm;
-      setMetroBpm(40);
-      setTimeout(() => { if (metroBpm === 40) setMetroBpm(orig); }, oneInterval());
-    }
-  },
-
-  // 21. Climax — one interval
-  {
-    name: 'climax', duration: () => oneInterval(),
-    fn: () => {
-      if (document.getElementById('slideshow').style.display !== 'none') {
-        ssIndex = (ssIndex + 1) % ssOrder.length;
-        loadSSPhoto(); scheduleSS();
-      }
-      // Set BPM after loadSSPhoto so on-slide mode doesn't overwrite it
-      const orig = metroBpm;
-      setMetroBpm(320);
-      setTimeout(() => { if (metroBpm === 320) setMetroBpm(orig); }, oneInterval());
-    }
-  },
-
-  // 22. Triplet — 3 beeps per beat for one interval
-  {
-    name: 'triplet', duration: () => oneInterval(),
-    fn: () => {
-      metroTripletDepth++;
-      metroTriplet = true;
-      setTimeout(() => {
-        metroTripletDepth = Math.max(0, metroTripletDepth - 1);
-        if (metroTripletDepth === 0) metroTriplet = false;
-      }, oneInterval());
-    }
-  },
-
-  // 23. Breakdown — halves BPM and doubles slide interval simultaneously
-  {
-    name: 'breakdown', duration: () => oneInterval(),
-    fn: () => {
-      const origBpm = metroBpm;
-      const origInterval = ssInterval;
-      const brokenBpm = Math.max(40, Math.round(origBpm / 2));
-      setMetroBpm(brokenBpm);
-      const inSS = document.getElementById('slideshow').style.display !== 'none';
-      const brokenInterval = origInterval * 2;
-      if (inSS) ssInterval = brokenInterval;
-      setTimeout(() => {
-        if (metroBpm === brokenBpm) setMetroBpm(origBpm);
-        if (ssInterval === brokenInterval) ssInterval = origInterval;
-      }, oneInterval());
+      const wrap = document.getElementById('ssWrap') || document.querySelector('#viewer .ss-img-wrap');
+      if (!wrap) return;
+      const flash = document.createElement('div');
+      flash.style.cssText = 'position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:50;transition:opacity .08s';
+      wrap.appendChild(flash);
+      requestAnimationFrame(() => { flash.style.opacity = '0.55'; });
+      setTimeout(() => { flash.style.opacity = '0'; setTimeout(() => flash.remove(), 120); }, 90);
     }
   },
 ];
@@ -1877,6 +2097,7 @@ window.addEventListener('load', () => {
   if (k) document.getElementById('apiKey').value = k;
   if (c) document.getElementById('clientId').value = c;
   loadSettings();
+  applyTheme();
   updateMetroSettingsVisibility();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {}); // best-effort; ignore if unsupported/blocked

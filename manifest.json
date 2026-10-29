@@ -1,7 +1,7 @@
 {
   "name": "DriveSlide",
   "short_name": "DriveSlide",
-  "description": "Google Drive photo slideshow with a generative metronome",
+  "description": "Google Drive photo gallery & generative metronome slideshow",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
